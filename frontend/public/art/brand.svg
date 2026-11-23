@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="DevFlash">
+  <defs>
+    <linearGradient id="brackets" x1=".18" x2=".82" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#00e6ef"/><stop offset=".52" stop-color="#00aff8"/><stop offset="1" stop-color="#0064fb"/></linearGradient>
+    <linearGradient id="flash" x2=".7" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#fff930"/><stop offset="1" stop-color="#ffc500"/></linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="#040d26"/>
+  <g fill="url(#brackets)">
+    <path d="M23 16h6L12.8 32l14.3 14.8-.7 2.4h-5.3a2.4 2.4 0 0 1-1.8-.8L5.9 35a4 4 0 0 1 0-5.7l13.6-12.5A3 3 0 0 1 21.6 16Z"/>
+    <path d="M40 16h3a3 3 0 0 1 2.2.9L58.1 30a3.6 3.6 0 0 1 .1 5.1L44.4 48.7a2.5 2.5 0 0 1-1.8.7h-7.1L51.5 33 39.2 20.4Z"/>
+  </g>
+  <path fill="url(#flash)" d="m40.3 7.1-6.1 20.7h9.1L23.6 57.7l6.2-22.8H19.1Z"/>
+</svg>
