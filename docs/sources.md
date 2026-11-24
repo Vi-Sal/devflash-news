@@ -1,6 +1,6 @@
 # News sources and import behavior
 
-The initial catalogue enables two project-owned feeds. Their official endpoints returned HTTP 200 and parseable feeds during implementation on November 23, 2026.
+The built-in catalogue uses first-party project and public agency feeds.
 
 | Publisher | Feed | Reuse basis |
 | --- | --- | --- |
@@ -8,6 +8,10 @@ The initial catalogue enables two project-owned feeds. Their official endpoints 
 | Kubernetes Blog | [RSS feed](https://kubernetes.io/feed.xml) | The Kubernetes website repository includes the blog and publishes its content under CC BY 4.0. [Blog](https://kubernetes.io/blog/) · [Repository license](https://github.com/kubernetes/website/blob/main/LICENSE) |
 
 Preview text comes from the feed description or summary. DevFlash removes markup, truncates long descriptions and retains the publisher, item URL, supplied byline and publication timestamp. The article page links to [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) for these sources. A provider-generated explanation is an adaptation of the preview. Check individual exceptions before syndicating third-party material. Embedded article HTML and remote page bodies are never used for previews.
+
+## Federal Reserve payments announcements
+
+V8 adds the Federal Reserve Board’s official Other Announcements RSS feed. The collector keeps only entries published in the last 30 days with payment technology or digital-finance terms in the original headline. The Board permits redistribution of its public-domain information with attribution, subject to any item-specific exceptions. DevFlash leaves logos and publisher images out of the default feed configuration. [Official RSS directory](https://www.federalreserve.gov/feeds/feeds.htm) · [Federal Reserve reuse terms](https://www.federalreserve.gov/disclaimer.htm)
 
 ## Add a publisher
 

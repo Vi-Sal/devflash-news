@@ -48,7 +48,9 @@ class IngestionDatabaseTest {
     tx = new TransactionTemplate(new DataSourceTransactionManager(ds));
     Flyway.configure().dataSource(ds).schemas(schema).load().migrate();
     client = mock(FeedClient.class);
-    db.update("UPDATE sources SET enabled=false WHERE source_type='CISA_KEV'");
+    db.update(
+        "UPDATE sources SET enabled=false WHERE source_type='CISA_KEV' OR feed_url=?",
+        FeedClient.FED_NEWS_URL);
     service = newService(client);
   }
 
@@ -266,6 +268,44 @@ class IngestionDatabaseTest {
         .containsEntry("image_source", "MEDIA_CONTENT")
         .containsEntry("summary", "Editorial text")
         .containsEntry("source_description", "Updated preview");
+  }
+
+  @Test
+  void federalReserveImportKeepsOnlyRecentPaymentsNews() throws Exception {
+    long id = source(FeedClient.FED_NEWS_URL);
+    db.update("update sources set enabled=true where id=?", id);
+    var now = java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC);
+    String recent = java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(now.minusDays(1));
+    String old = java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(now.minusDays(45));
+    String xml =
+        """
+        <rss version="2.0"><channel><title>Federal Reserve Board</title>
+        <link>https://www.federalreserve.gov</link><description>Fixture</description>
+        <item><title>Federal Reserve Board announces pricing for payment services</title>
+        <link>https://www.federalreserve.gov/fixture1.htm</link><pubDate>%s</pubDate></item>
+        <item><title>Federal Reserve Board announces interest rate decision</title>
+        <link>https://www.federalreserve.gov/fixture2.htm</link><pubDate>%s</pubDate></item>
+        <item><title>Federal Reserve Board publishes a Fedwire update</title>
+        <link>https://www.federalreserve.gov/fixture3.htm</link><pubDate>%s</pubDate></item>
+        </channel></rss>
+        """
+            .formatted(recent, recent, old);
+    when(client.fetch(FeedClient.FED_NEWS_URL, null, null))
+        .thenReturn(
+            new FeedClient.Payload(
+                200, xml.getBytes(StandardCharsets.UTF_8), null, null, null, null));
+    assertThat(service.run(id).inserted()).isEqualTo(1);
+    assertThat(service.run(id).duplicates()).isEqualTo(1);
+    assertThat(
+            db.queryForObject(
+                """
+                select count(*) from articles a join article_categories x on x.article_id=a.id
+                join categories c on c.id=x.category_id
+                where a.source_id=? and a.publication_status='PUBLISHED' and c.slug='fintech'
+                """,
+                Integer.class,
+                id))
+        .isEqualTo(1);
   }
 
   private long source(String url) {

@@ -217,7 +217,11 @@ public class IngestionService {
       if (response.status() == 200) {
         var parsed = parser.parse(response.body(), s.type);
         counts.fetched = parsed.stories().size() + parsed.skipped();
+        Instant cutoff = Instant.now().minus(java.time.Duration.ofDays(30));
         for (var story : parsed.stories()) {
+          if (FeedClient.FED_NEWS_URL.equals(s.url)
+              && (story.published().isBefore(cutoff)
+                  || !Classifier.isFintechAnnouncement(story.title()))) continue;
           if (counts.inserted >= limit) {
             consumed = false;
             break;

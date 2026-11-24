@@ -31,6 +31,9 @@ import org.springframework.stereotype.Component;
 public class FeedClient {
   public static final String KEV_URL =
       "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json";
+  static final String FED_NEWS_URL = "https://www.federalreserve.gov/feeds/press_other.xml";
+  private static final Set<String> BUILTIN_FEEDS = Set.of(KEV_URL, FED_NEWS_URL);
+  private static final Set<String> BUILTIN_HOSTS = Set.of("www.cisa.gov", "www.federalreserve.gov");
   static final int BODY_LIMIT = 3 * 1024 * 1024;
   private final Set<String> hosts;
   private final CloseableHttpClient http;
@@ -49,7 +52,7 @@ public class FeedClient {
         new DnsResolver() {
           public InetAddress[] resolve(String host) throws UnknownHostException {
             if (!hosts.contains(host.toLowerCase(Locale.ROOT))
-                && !"www.cisa.gov".equalsIgnoreCase(host))
+                && !BUILTIN_HOSTS.contains(host.toLowerCase(Locale.ROOT)))
               throw new UnknownHostException("Feed host is disabled");
             return checkedAddresses(InetAddress.getAllByName(host));
           }
@@ -94,7 +97,8 @@ public class FeedClient {
     if (value.length() > 2048
         || !"https".equalsIgnoreCase(uri.getScheme())
         || uri.getHost() == null
-        || !(hosts.contains(uri.getHost().toLowerCase(Locale.ROOT)) || KEV_URL.equals(value))
+        || !(hosts.contains(uri.getHost().toLowerCase(Locale.ROOT))
+            || BUILTIN_FEEDS.contains(value))
         || uri.getRawUserInfo() != null
         || uri.getRawFragment() != null
         || (uri.getPort() != -1 && uri.getPort() != 443)
@@ -218,8 +222,9 @@ public class FeedClient {
           && redirects++ < 3
           && response.redirect != null) {
         uri = validate(uri.resolve(response.redirect).toString());
-        if ((articlePage || KEV_URL.equals(value)) && !uri.getHost().equals(origin.getHost()))
-          throw new FetchFailure("Unexpected CISA catalogue redirect", null);
+        if ((articlePage || BUILTIN_FEEDS.contains(value))
+            && !uri.getHost().equals(origin.getHost()))
+          throw new FetchFailure("Unexpected official feed redirect", null);
         continue;
       }
       if (response.status == 429 || response.status == 503 && response.retryAfter != null) {

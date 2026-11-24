@@ -5,6 +5,17 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 final class Classifier {
+  private static final Pattern PAYMENT_TECH =
+      words(
+          "FedNow|Fedwire|fintech|stablecoins?|payment systems?|payment accounts?|payments?"
+              + " (?:services?|infrastructure|systems?|processing|networks?|innovation|technology)|digital"
+              + " assets?|crypto-assets?|tokeni[sz](?:ation|ed)|instant payments?|triennial"
+              + " payments study");
+
+  static boolean isFintechAnnouncement(String title) {
+    return PAYMENT_TECH.matcher(title).find();
+  }
+
   private static final Map<String, Pattern> CATEGORIES =
       Map.of(
           "ai",
@@ -67,6 +78,7 @@ final class Classifier {
                   + (rule.matcher(description).find() ? .26 : 0);
           if (key.equals("developer")
               && (source.equals("The Go Blog") || source.equals("Kubernetes Blog"))) score += .65;
+          if (key.equals("fintech") && isFintechAnnouncement(title)) score = Math.max(score, .68);
           if (score >= .26) categories.put(key, Math.min(.99, score));
         });
     List<String> topics =

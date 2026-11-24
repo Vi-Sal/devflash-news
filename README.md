@@ -53,7 +53,7 @@ curl --fail-with-body -X POST \
 | PostgreSQL and Flyway | News, categories, topics, taxonomy overrides, enrichments, advisory metadata, counters, source health, ingestion leases, and audit records |
 | Maven and Docker | Reader assets and backend compiled into one executable jar and one Render web service |
 
-The default sources are the Kubernetes Blog, The Go Blog, and CISA’s official Known Exploited Vulnerabilities catalogue. Review the [source register, permission notes, collection rules, and AI configuration](docs/sources.md) before adding feeds.
+The default sources are the Kubernetes Blog, The Go Blog, CISA’s official Known Exploited Vulnerabilities catalogue, and Federal Reserve Board payments announcements. Review the [source register, permission notes, collection rules, and AI configuration](docs/sources.md) before adding feeds.
 
 ### Reading and discovery
 
@@ -82,7 +82,7 @@ Administrators authenticate with Spring Security, a session cookie, bcrypt hashe
 | `SPRING_PROFILES_ACTIVE` | Use `local` for local HTTP, `prod` on Render for secure cookies and structured JSON logs. |
 | `ADMIN_BOOTSTRAP_USERNAME`, `ADMIN_BOOTSTRAP_PASSWORD` | One-time first administrator provisioning. |
 | `INGESTION_TOKEN` | Dedicated bearer secret for the external scheduler. |
-| `FEED_ALLOWED_HOSTS` | Exact approved publisher hostnames separated by commas. Defaults to `go.dev,kubernetes.io`. The exact official CISA catalogue URL is separately recognized. |
+| `FEED_ALLOWED_HOSTS` | Exact approved publisher hostnames separated by commas. Defaults to `go.dev,kubernetes.io`. The official CISA and Federal Reserve feed URLs are separately recognized. |
 | `YOUTUBE_CHANNEL_URL` | Optional official channel link. The sidebar displays the card when a channel URL is configured. Admin settings can override it. |
 | `AI_ENABLED`, `AI_API_KEY`, `AI_MODEL` | Optional server-side provider configuration. Also enable AI in newsroom settings and assign a positive daily request budget. |
 | `AI_INPUT_COST_PER_MILLION_USD`, `AI_OUTPUT_COST_PER_MILLION_USD` | Optional model price inputs for the newsroom’s estimated AI cost. Reported provider token counts are stored regardless of price configuration. |
@@ -102,6 +102,7 @@ The connection pool caps at three connections and allows zero idle connections. 
 | V5 | Adds source-scoped entry identifiers and article image metadata. Clears feed validators once so existing entries can be enriched on their next import. |
 | V6 | Creates persistent daily editions and their ordered article links, adds an advisory verification field and CVE index, and extends AI usage with token totals and optional USD estimates. |
 | V7 | Enables the existing official CISA catalogue source. |
+| V8 | Adds the official Federal Reserve Board announcement feed for Fintech coverage. |
 
 Flyway owns schema changes. Hibernate validates the mapping at startup.
 
@@ -118,7 +119,7 @@ Set `IMAGE_LICENSED_HOSTS` to comma-separated publisher and image hosts whose im
 ### Post-deployment verification
 
 - [ ] Health returns HTTP 200 with `data.status` equal to `UP`.
-- [ ] Flyway has applied all seven migrations. The JDBC role owns the application tables.
+- [ ] Flyway has applied all eight migrations. The JDBC role owns the application tables.
 - [ ] Logged-out access to admin APIs is denied. Administrator login succeeds over HTTPS, session cookies are secure, and logout revokes access.
 - [ ] A manual import records per-source results. Repeating a completed import produces no duplicate articles.
 - [ ] Article links, pagination, search, categories, saved items, daily briefing, and dark mode work on the deployed origin.
