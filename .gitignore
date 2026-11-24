@@ -8,3 +8,7 @@ target/
 .vite/
 playwright-report/
 test-results/
+
+.dev.vars
+.dev.vars.*
+.wrangler/

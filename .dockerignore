@@ -7,3 +7,7 @@
 **/.DS_Store
 **/test-results
 **/playwright-report
+
+.dev.vars
+.dev.vars.*
+.wrangler

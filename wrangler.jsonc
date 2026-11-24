@@ -1,0 +1,17 @@
+{
+  "name": "devflash-news",
+  "main": "cloudflare-worker.mjs",
+  "compatibility_date": "2026-11-24",
+  "keep_vars": true,
+  "workers_dev": true,
+  "containers": [{
+    "class_name": "DevFlashContainer",
+    "image": "./Dockerfile",
+    "instance_type": "basic",
+    "max_instances": 1
+  }],
+  "durable_objects": {
+    "bindings": [{ "name": "DEVFLASH", "class_name": "DevFlashContainer" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DevFlashContainer"] }]
+}
