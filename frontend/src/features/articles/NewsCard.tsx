@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Clock3, Bookmark, Share2, ExternalLink, Check } from 'lucide-react';
+import { Clock3, Bookmark, Share2, ExternalLink, Check, Eye } from 'lucide-react';
 import { formatDistanceToNowStrict, format } from 'date-fns';
 import { art, safeUrl, type Story } from '../../services/news';
 import { useReader } from '../../app/reader';
@@ -9,16 +9,32 @@ export function StoryImage({ story, eager = false }: { story: Story; eager?: boo
     <img
       className="story-image"
       src={safeUrl(story.imageUrl, 'image') || art(story)}
-      alt={story.imageUrl ? story.imageAlt || story.title : (story.categories[0] || "Technology") + " illustration"}
+      alt={
+        story.imageUrl
+          ? story.imageAlt || story.title
+          : (story.categories[0] || 'Technology') + ' illustration'
+      }
       title={story.imageAttribution || undefined}
       width="760"
       height="506"
       loading={eager ? 'eager' : 'lazy'}
       referrerPolicy="no-referrer"
       onError={(e) => {
-        if (!e.currentTarget.src.endsWith(art(story))) {e.currentTarget.src = art(story);e.currentTarget.alt=(story.categories[0] || "Technology")+" illustration";e.currentTarget.removeAttribute("title");}
+        if (!e.currentTarget.src.endsWith(art(story))) {
+          e.currentTarget.src = art(story);
+          e.currentTarget.alt = (story.categories[0] || 'Technology') + ' illustration';
+          e.currentTarget.removeAttribute('title');
+        }
       }}
     />
+  );
+}
+export function ViewCount({ count }: { count?: number }) {
+  if (count === undefined) return null;
+  return (
+    <span className="article-views">
+      <Eye size={15} aria-hidden /> {count.toLocaleString()} {count === 1 ? 'view' : 'views'}
+    </span>
   );
 }
 export function Actions({ story }: { story: Story }) {
@@ -92,6 +108,7 @@ export default function NewsCard({ story, eager = false }: { story: Story; eager
             <span>{story.minutes} min read</span>
             <span>·</span>
             <span>{story.source}</span>
+            <ViewCount count={story.viewCount} />
           </div>
           <Actions story={story} />
         </div>

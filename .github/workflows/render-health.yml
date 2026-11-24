@@ -1,0 +1,20 @@
+name: DevFlash Render health check
+"on":
+  schedule:
+    - cron: '2-57/5 * * * *'
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: devflash-render-health
+  cancel-in-progress: false
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check DevFlash health
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 90 \
+            https://devflash-news.onrender.com/api/v1/health |
+            jq -e '.data.status == "UP"'

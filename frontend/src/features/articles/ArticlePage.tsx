@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ExternalLink, Clock3, ChevronLeft } from 'lucide-react';
 import { format } from 'date-fns';
-import NewsCard, { Actions, StoryImage } from './NewsCard';
+import NewsCard, { Actions, StoryImage, ViewCount } from './NewsCard';
 import { CategoryIcon, Failure, Skeleton, useCategories, useData } from '../../components/common';
 import { ApiError, safeUrl, type Detail, type Story } from '../../services/news';
 import { useReader } from '../../app/reader';
@@ -14,12 +14,15 @@ export default function ArticlePage() {
     { mark } = useReader(),
     a = query.data?.story,
     terms = useCategories();
+  const articleId = a?.id;
+  const articleSlug = a?.slug;
+  const title = a?.title;
   useEffect(() => {
-    if (a) {
-      document.title = a.title + ' · DevFlash';
-      mark(a);
-    }
-  }, [a, mark]);
+    if (title) document.title = title + ' · DevFlash';
+  }, [title]);
+  useEffect(() => {
+    if (articleId !== undefined && articleSlug) mark(articleId, articleSlug);
+  }, [articleId, articleSlug, mark]);
   if (query.isError)
     return query.error instanceof ApiError && query.error.status === 404 ? (
       <Missing />
@@ -54,6 +57,7 @@ export default function ArticlePage() {
           <span>
             <Clock3 size={15} /> {a.minutes} min read
           </span>
+          <ViewCount count={a.viewCount} />
           <Actions story={a} />
         </div>
         <StoryImage story={a} eager />

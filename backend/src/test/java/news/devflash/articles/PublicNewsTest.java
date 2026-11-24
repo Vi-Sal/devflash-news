@@ -10,6 +10,7 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.web.server.ResponseStatusException;
 
 class PublicNewsTest {
@@ -56,6 +57,20 @@ class PublicNewsTest {
               + " slug='developer'),1 FROM articles WHERE id<=2");
       db.update("INSERT INTO topics(name,slug) VALUES('Runtime','runtime')");
       db.update("INSERT INTO article_topics VALUES(1,1)");
+      assertEquals(0L, reader.one("fixture-1").viewCount());
+      var viewer = new MockHttpSession();
+      api.event("fixture-1", new NewsApi.Event("view"), viewer);
+      api.event("fixture-1", new NewsApi.Event("view"), viewer);
+      api.event("fixture-1", new NewsApi.Event("share"), viewer);
+      api.event("fixture-1", new NewsApi.Event("view"), new MockHttpSession());
+      assertEquals(2L, reader.one("fixture-1").viewCount());
+      assertEquals(0L, reader.one("fixture-2").viewCount());
+      assertEquals(
+          2L,
+          api.feed(null, null, "runtime", null, null, "newest", 10, null)
+              .data()
+              .getFirst()
+              .viewCount());
       var first = api.feed(null, null, "", null, null, "newest", 2, null);
       assertEquals(List.of(3L, 2L), first.data().stream().map(NewsQueries.Story::id).toList());
       assertEquals(

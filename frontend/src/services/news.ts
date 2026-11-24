@@ -8,6 +8,7 @@ export interface Story {
   imageAttribution?: string | null;
   imageStatus?: string;
   imageSource?: string | null;
+  viewCount?: number;
   imageUrl: string | null;
   source: string;
   author: string | null;
@@ -114,14 +115,19 @@ export async function request<T>(
 export async function data<T>(path: string, signal?: AbortSignal): Promise<T> {
   return (await request<{ data: T }>(path, {}, signal)).data;
 }
-export function event(slug: string, type: 'view' | 'share') {
-  if (!__DEMO__)
-    void fetch('/api/v1/articles/' + encodeURIComponent(slug) + '/events', {
+export async function event(slug: string, type: 'view' | 'share') {
+  if (__DEMO__) return false;
+  try {
+    const response = await fetch('/api/v1/articles/' + encodeURIComponent(slug) + '/events', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type }),
       keepalive: true,
-    }).catch(() => {});
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 export function safeUrl(
   value: string | null | undefined,

@@ -1194,3 +1194,10 @@ footer nav {
     margin-top: -9px;
   }
 }
+
+.article-views {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}

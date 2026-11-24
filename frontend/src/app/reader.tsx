@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { event, type Story } from '../services/news';
 const key = 'devflash:' + (__DEMO__ ? 'sample:' : 'live:');
 export function read<T>(name: string, initial: T): T {
@@ -20,13 +21,14 @@ interface Reader {
   saved: Story[];
   ids: number[];
   toggle: (a: Story) => void;
-  mark: (a: Story) => void;
+  mark: (id: number, slug: string) => void;
   share: (path: string, title: string, a?: Story) => Promise<void>;
   theme: Theme;
   setTheme: (t: Theme) => void;
 }
 const ReaderContext = createContext<Reader | null>(null);
 export function ReaderProvider({ children }: { children: ReactNode }) {
+  const client = useQueryClient();
   const [saved, setSaved] = useState<Story[]>(() => read('saved', [])),
     [ids, setIds] = useState<number[]>(() => read('read', [])),
     [theme, setTheme] = useState<Theme>(() => read('theme', 'light')),
@@ -54,10 +56,17 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
       return () => clearTimeout(timer);
     }
   }, [message]);
-  const mark = useCallback((a: Story) => {
-    setIds((old) => (old.includes(a.id) ? old : [...old.slice(-999), a.id]));
-    event(a.slug, 'view');
-  }, []);
+  const mark = useCallback(
+    (id: number, slug: string) => {
+      setIds((old) => (old.includes(id) ? old : [...old.slice(-999), id]));
+      void event(slug, 'view').then((recorded) => {
+        if (!recorded) return;
+        void client.invalidateQueries({ queryKey: ['feed'], refetchType: 'none' });
+        void client.invalidateQueries({ queryKey: ['/articles/' + slug], exact: true });
+      });
+    },
+    [client],
+  );
   function toggle(a: Story) {
     const exists = saved.some((s) => s.id === a.id);
     setSaved((old) => (exists ? old.filter((s) => s.id !== a.id) : [a, ...old]));

@@ -28,6 +28,7 @@ public class NewsQueries {
       Instant publishedAt,
       int minutes,
       boolean featured,
+      long viewCount,
       List<String> categories,
       List<String> topics) {}
 
@@ -62,14 +63,15 @@ public class NewsQueries {
   static final String COLUMNS =
       """
       a.id,a.slug,a.title,a.summary,a.original_url,case when a.image_status='AVAILABLE' then a.image_url end as image_url,a.image_source,a.image_alt,a.image_attribution,a.image_status,s.name AS source,a.author,a.published_at,
-      a.reading_time_minutes,a.featured,
+      a.reading_time_minutes,a.featured,COALESCE(m.view_count,0) AS view_count,
       ARRAY(SELECT c.slug FROM article_categories ac JOIN categories c ON c.id=ac.category_id
               WHERE ac.article_id=a.id AND c.enabled ORDER BY ac.confidence DESC,c.id) categories,
       ARRAY(SELECT t.slug FROM article_topics atp JOIN topics t ON t.id=atp.topic_id
               WHERE atp.article_id=a.id ORDER BY t.name) topics
       """;
   static final String BASE =
-      " FROM articles a JOIN sources s ON a.source_id=s.id WHERE a.publication_status='PUBLISHED' ";
+      " FROM articles a JOIN sources s ON a.source_id=s.id LEFT JOIN article_metrics m ON"
+          + " m.article_id=a.id WHERE a.publication_status='PUBLISHED' ";
   final NamedParameterJdbcTemplate db;
 
   public NewsQueries(NamedParameterJdbcTemplate db) {
@@ -101,6 +103,7 @@ public class NewsQueries {
         r.getTimestamp("published_at").toInstant(),
         r.getInt("reading_time_minutes"),
         r.getBoolean("featured"),
+        r.getLong("view_count"),
         List.of((String[]) r.getArray("categories").getArray()),
         List.of((String[]) r.getArray("topics").getArray()));
   }
