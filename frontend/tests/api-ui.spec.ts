@@ -149,3 +149,20 @@ test('recovers after a failed feed and keeps new stories behind an explicit refr
   await expect(page.getByRole('article').first()).toContainText('Fixture story 12');
   await expect(refresh).toHaveCount(0);
 });
+
+test('renders each article image and replaces only a broken image', async ({ page }) => {
+  const rows = [1, 2, 3].map(id => ({
+    ...fixtureStory(id), imageUrl:'https://images.example.org/'+id+'.jpg', imageAlt:'Diagram '+id
+  }));
+  await page.route('https://images.example.org/**', route =>
+    route.request().url().endsWith('3.jpg') ? route.abort() :
+      route.fulfill({path:'public/art/developer.jpg',contentType:'image/jpeg'}));
+  await page.route('**/api/v1/**', route =>
+    new URL(route.request().url()).pathname.endsWith('/articles')
+      ? json(route,{data:rows,nextCursor:null,hasMore:false}) : sidebarFixture(route));
+  await page.goto('/');
+  for(const id of [1,2]) await expect(page.getByAltText('Diagram '+id)).toHaveAttribute('src',rows[id-1].imageUrl);
+  const third=page.locator('article img').nth(2);
+  await third.scrollIntoViewIfNeeded();
+  await expect(third).toHaveAttribute('src','/art/developer.jpg');
+});

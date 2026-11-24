@@ -147,6 +147,15 @@ public class FeedClient {
   }
 
   public Payload fetch(String value, String etag, String modified) throws IOException {
+    return fetch(value, etag, modified, false);
+  }
+
+  Payload fetchPage(String url) throws IOException {
+    return fetch(url, null, null, true);
+  }
+
+  private Payload fetch(String value, String etag, String modified, boolean articlePage)
+      throws IOException {
     URI origin = validate(value);
     URI uri = origin;
     int redirects = 0, retries = 0;
@@ -155,8 +164,10 @@ public class FeedClient {
       HttpGet request = new HttpGet(uri);
       request.setHeader(
           "Accept",
-          "application/atom+xml, application/rss+xml, application/feed+json, application/xml,"
-              + " application/json");
+          articlePage
+              ? "text/html"
+              : "application/atom+xml, application/rss+xml, application/feed+json, application/xml,"
+                  + " application/json");
       if (origin.equals(uri)) {
         conditional(request, "If-None-Match", etag);
         conditional(request, "If-Modified-Since", modified);
@@ -207,7 +218,7 @@ public class FeedClient {
           && redirects++ < 3
           && response.redirect != null) {
         uri = validate(uri.resolve(response.redirect).toString());
-        if (KEV_URL.equals(value) && !uri.getHost().equals(origin.getHost()))
+        if ((articlePage || KEV_URL.equals(value)) && !uri.getHost().equals(origin.getHost()))
           throw new FetchFailure("Unexpected CISA catalogue redirect", null);
         continue;
       }

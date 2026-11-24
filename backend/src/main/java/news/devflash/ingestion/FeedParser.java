@@ -29,7 +29,24 @@ public class FeedParser {
       Instant published,
       String tags,
       String image,
-      Advisory advisory) {}
+      Advisory advisory,
+      String itemId,
+      String imageSource) {
+    Story(
+        String title,
+        String original,
+        String canonical,
+        String preview,
+        String author,
+        Instant published,
+        String tags,
+        String image,
+        Advisory advisory) {
+      this(
+          title, original, canonical, preview, author, published, tags, image, advisory, null,
+          null);
+    }
+  }
 
   record Advisory(String cve, String vendor, String product, String mitigation) {}
 
@@ -71,7 +88,9 @@ public class FeedParser {
               author.path("name").asText(),
               date(item.path("date_published").asText()),
               String.join(" ", tags),
-              item.path("image").asText());
+              item.path("image").asText(),
+              item.path("id").asText(),
+              "API");
         }
       } else {
         inspectXml(bytes);
@@ -104,6 +123,16 @@ public class FeedParser {
                   .filter(Objects::nonNull)
                   .findFirst()
                   .orElse(null);
+          String kind = "ENCLOSURE";
+          image = imageUrl(entry.getLink(), image);
+          for (String tag : List.of("content", "thumbnail")) {
+            String candidate = media(entry.getForeignMarkup(), tag, entry.getLink());
+            if (candidate != null) {
+              image = candidate;
+              kind = "MEDIA_" + tag.toUpperCase(Locale.ROOT);
+              break;
+            }
+          }
           add(
               stories,
               entry.getTitle(),
@@ -112,7 +141,9 @@ public class FeedParser {
               author,
               entry.getPublishedDate() == null ? null : entry.getPublishedDate().toInstant(),
               tags,
-              image);
+              image,
+              entry.getUri(),
+              kind);
         }
       }
       return new Parsed(List.copyOf(stories), count - stories.size());
@@ -186,6 +217,38 @@ public class FeedParser {
     }
   }
 
+  private static String media(List<org.jdom2.Element> nodes, String tag, String base) {
+    for (var node : nodes) {
+      if (!"http://search.yahoo.com/mrss/".equals(node.getNamespaceURI())) continue;
+      if (node.getName().equals(tag)) {
+        String type = node.getAttributeValue("type", ""),
+            medium = node.getAttributeValue("medium", "");
+        if ((medium.isEmpty() || medium.equals("image"))
+            && (type.isEmpty() || type.startsWith("image/"))) {
+          String url = imageUrl(base, node.getAttributeValue("url"));
+          if (url != null) return url;
+        }
+      }
+      if (node.getName().equals("group")) {
+        String url = media(node.getChildren(), tag, base);
+        if (url != null) return url;
+      }
+    }
+    return null;
+  }
+
+  static String imageUrl(String base, String value) {
+    if (value == null || value.isBlank() || base == null) return null;
+    try {
+      URI u = URI.create(base).resolve(value.strip()).normalize();
+      return "https".equalsIgnoreCase(u.getScheme()) && canonical(u.toString()) != null
+          ? u.toASCIIString()
+          : null;
+    } catch (IllegalArgumentException e) {
+      return null;
+    }
+  }
+
   private static void add(
       List<Story> output,
       String title,
@@ -194,17 +257,15 @@ public class FeedParser {
       String author,
       Instant date,
       String tags,
-      String image) {
+      String image,
+      String identifier,
+      String imageSource) {
     if (date == null || date.isAfter(Instant.now()) || date.isBefore(Instant.EPOCH)) return;
     String cleanTitle = plain(title, 450);
     if (cleanTitle.isBlank()) return;
     String canonical = canonical(url);
     if (canonical == null) return;
-    String safeImage = canonical(image);
-    if (safeImage != null
-        && (!safeImage.startsWith("https://")
-            || !URI.create(safeImage).getHost().equals(URI.create(canonical).getHost())))
-      safeImage = null;
+    String safeImage = imageUrl(canonical, image);
     output.add(
         new Story(
             cleanTitle,
@@ -215,7 +276,11 @@ public class FeedParser {
             date,
             plain(tags, 500),
             safeImage,
-            null));
+            null,
+            identifier == null || identifier.isBlank() || identifier.length() > 1024
+                ? null
+                : identifier.strip(),
+            safeImage == null ? null : imageSource));
   }
 
   static String plain(String html, int max) {

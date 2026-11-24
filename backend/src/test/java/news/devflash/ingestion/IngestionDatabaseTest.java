@@ -216,6 +216,43 @@ class IngestionDatabaseTest {
     }
   }
 
+  @Test
+  void stableIdentifierRefreshesLicensedMediaAndKeepsEditorialFields() throws Exception {
+    org.springframework.test.util.ReflectionTestUtils.setField(service, "licensedHosts", "go.dev");
+    String xml =
+        """
+        <rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>Fixture</title>
+        <link>https://go.dev</link><description>Fixture</description><item><guid isPermaLink="false">stable-id</guid>
+        <title>Go developer news</title><link>https://go.dev/first</link><description>First preview</description>
+        <pubDate>Tue, 10 Nov 2020 00:00:00 GMT</pubDate><media:thumbnail url="https://go.dev/thumb.jpg"/>
+        <media:content type="image/jpeg" url="https://go.dev/photo.jpg"/></item></channel></rss>
+        """;
+    String changed =
+        xml.replace("/first", "/second")
+            .replace("photo.jpg", "updated.jpg")
+            .replace("First preview", "Updated preview");
+    when(client.fetch(GO, null, null))
+        .thenReturn(
+            new FeedClient.Payload(
+                200, xml.getBytes(StandardCharsets.UTF_8), null, null, null, null),
+            new FeedClient.Payload(
+                200, changed.getBytes(StandardCharsets.UTF_8), null, null, null, null));
+    assertThat(service.run(source(GO)).inserted()).isEqualTo(1);
+    assertThat(db.queryForObject("select image_url from articles", String.class))
+        .endsWith("/photo.jpg");
+    db.update("update articles set summary='Editorial text'");
+    assertThat(service.run(source(GO)).duplicates()).isEqualTo(1);
+    var row =
+        db.queryForMap(
+            "select image_url,image_status,image_source,summary,source_description from articles");
+    assertThat(row)
+        .containsEntry("image_url", "https://go.dev/updated.jpg")
+        .containsEntry("image_status", "AVAILABLE")
+        .containsEntry("image_source", "MEDIA_CONTENT")
+        .containsEntry("summary", "Editorial text")
+        .containsEntry("source_description", "Updated preview");
+  }
+
   private long source(String url) {
     return db.queryForObject("select id from sources where feed_url=?", Long.class, url);
   }

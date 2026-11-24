@@ -19,6 +19,10 @@ public class NewsQueries {
       String summary,
       String originalUrl,
       String imageUrl,
+      String imageSource,
+      String imageAlt,
+      String imageAttribution,
+      String imageStatus,
       String source,
       String author,
       Instant publishedAt,
@@ -57,7 +61,7 @@ public class NewsQueries {
 
   static final String COLUMNS =
       """
-      a.id,a.slug,a.title,a.summary,a.original_url,a.image_url,s.name AS source,a.author,a.published_at,
+      a.id,a.slug,a.title,a.summary,a.original_url,case when a.image_status='AVAILABLE' then a.image_url end as image_url,a.image_source,a.image_alt,a.image_attribution,a.image_status,s.name AS source,a.author,a.published_at,
       a.reading_time_minutes,a.featured,
       ARRAY(SELECT c.slug FROM article_categories ac JOIN categories c ON c.id=ac.category_id
               WHERE ac.article_id=a.id AND c.enabled ORDER BY ac.confidence DESC,c.id) categories,
@@ -88,6 +92,10 @@ public class NewsQueries {
         r.getString("summary"),
         r.getString("original_url"),
         r.getString("image_url"),
+        r.getString("image_source"),
+        r.getString("image_alt"),
+        r.getString("image_attribution"),
+        r.getString("image_status"),
         r.getString("source"),
         r.getString("author"),
         r.getTimestamp("published_at").toInstant(),

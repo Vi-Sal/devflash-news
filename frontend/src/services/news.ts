@@ -4,6 +4,10 @@ export interface Story {
   title: string;
   summary: string | null;
   originalUrl: string;
+  imageAlt?: string | null;
+  imageAttribution?: string | null;
+  imageStatus?: string;
+  imageSource?: string | null;
   imageUrl: string | null;
   source: string;
   author: string | null;

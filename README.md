@@ -99,10 +99,14 @@ The connection pool caps at three connections and allows zero idle connections. 
 
 Flyway owns schema changes. Hibernate validates the mapping at startup. The migrations contain no sample articles, fabricated engagement, or shared administrator credentials.
 
+| V5 | Adds source-scoped entry identifiers and article image metadata. Clears feed validators once so existing entries can be enriched on their next import. |
+
+Set `IMAGE_LICENSED_HOSTS` to comma-separated publisher and image hosts whose images you have permission to display with publisher attribution. Article-page requests also require the host in `FEED_ALLOWED_HOSTS`. A blank image allowlist uses category illustrations. Import checks Media RSS content, thumbnails, image enclosures, page social metadata and JSON Feed images. Stored image metadata serves reader requests.
+
 ## Deploy on Render
 
 1. Push this repository to your Git provider. In Render, create a Blueprint from `render.yaml`, or create one Docker web service from the repository root. The multistage Dockerfile builds React and packages it into Spring Boot. Set the health path to `/api/v1/health`. [Render deployments](https://render.com/docs/deploys)
-2. In the Supabase dashboard, open the project connection settings. For the direct endpoint supplied in the brief, set `DB_URL=jdbc:postgresql://db.vjuukcwdrhgrbwwxbkhm.supabase.co:5432/postgres?sslmode=require`, `DB_USERNAME=postgres`, and the database password in Render’s secret settings. If the selected Render region cannot reach the IPv6 endpoint, copy the **Session pooler** host, port, database and username shown by Supabase. Use those exact values in JDBC form. [Supabase connection methods](https://supabase.com/docs/guides/database/connecting-to-postgres)
+2. In the Supabase dashboard, open the project connection settings. Use the project’s Session pooler: set `DB_URL=jdbc:postgresql://aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres?sslmode=require` and `DB_USERNAME=postgres.vjuukcwdrhgrbwwxbkhm`. Set `DB_PASSWORD` separately in Render secrets. For server identity verification, mount the official Supabase CA and use `sslmode=verify-full&sslrootcert=/path/to/ca.crt`. [Supabase connection methods](https://supabase.com/docs/guides/database/connecting-to-postgres)
 3. Set the one-time bootstrap credentials and production profile. The Blueprint generates an ingestion token. Set the channel and AI configuration only when those services are ready. Deploy, sign in, and remove the bootstrap credentials.
 4. Add GitHub Actions repository secrets `DEVFLASH_BASE_URL` and `INGESTION_TOKEN`. Use the HTTPS origin and the same scheduler token as Render. Run **Collect news** manually once. The workflow runs hourly at minute 17 from the default branch. Free instances can take time to wake and scheduled Actions can be delayed. [Render free instances](https://render.com/docs/free)
 5. Check the ingestion history and published stories. The lease prevents overlapping collectors. A scheduled run can resume after an expired lease or retry a publisher after its backoff window.
@@ -110,7 +114,7 @@ Flyway owns schema changes. Hibernate validates the mapping at startup. The migr
 ### Post-deployment verification
 
 - [ ] Health returns HTTP 200 with `data.status` equal to `UP`.
-- [ ] Flyway has applied all four migrations. The JDBC role owns the application tables.
+- [ ] Flyway has applied all five migrations. The JDBC role owns the application tables.
 - [ ] Logged-out access to admin APIs is denied. Administrator login succeeds over HTTPS, session cookies are secure, and logout revokes access.
 - [ ] A manual import records per-source results. Repeating a completed import produces no duplicate articles.
 - [ ] Article links, pagination, search, categories, saved items, daily briefing, and dark mode work on the deployed origin.

@@ -10,6 +10,7 @@ public class Article {
   String slug;
   String title;
   String summary;
+  String imageUrl, imageSource, imageAlt, imageAttribution, imageStatus;
   String publicationStatus;
   Instant publishedAt;
 }

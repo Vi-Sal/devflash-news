@@ -9,13 +9,14 @@ export function StoryImage({ story, eager = false }: { story: Story; eager?: boo
     <img
       className="story-image"
       src={safeUrl(story.imageUrl, 'image') || art(story)}
-      alt=""
+      alt={story.imageUrl ? story.imageAlt || story.title : (story.categories[0] || "Technology") + " illustration"}
+      title={story.imageAttribution || undefined}
       width="760"
       height="506"
       loading={eager ? 'eager' : 'lazy'}
       referrerPolicy="no-referrer"
       onError={(e) => {
-        if (!e.currentTarget.src.endsWith(art(story))) e.currentTarget.src = art(story);
+        if (!e.currentTarget.src.endsWith(art(story))) {e.currentTarget.src = art(story);e.currentTarget.alt=(story.categories[0] || "Technology")+" illustration";e.currentTarget.removeAttribute("title");}
       }}
     />
   );

@@ -41,6 +41,54 @@ public class IngestionService {
     this.enrich = enrich;
   }
 
+  @org.springframework.beans.factory.annotation.Value("${IMAGE_LICENSED_HOSTS:}")
+  private String licensedHosts = "";
+
+  record Picture(String url, String source) {}
+
+  boolean licensed(String url) {
+    if (url == null) return false;
+    String host = java.net.URI.create(url).getHost();
+    return Arrays.stream(licensedHosts.split(","))
+        .map(String::strip)
+        .anyMatch(h -> h.equalsIgnoreCase(host));
+  }
+
+  private Picture picture(Source source, FeedParser.Story story) {
+    if (!licensed(source.url)) return null;
+    if (licensed(story.image()) && !"API".equals(story.imageSource()))
+      return new Picture(story.image(), story.imageSource());
+    if (licensed(story.canonical())
+        && db.queryForObject(
+            """
+            select not exists(select 1 from articles where source_id=? and (canonical_url=? or source_item_id=?) and image_status in ('AVAILABLE','MISSING'))
+            """,
+            Boolean.class,
+            source.id,
+            story.canonical(),
+            story.itemId())) {
+      try {
+        var page = client.fetchPage(story.canonical());
+        var doc =
+            org.jsoup.Jsoup.parse(
+                new java.io.ByteArrayInputStream(page.body()), null, story.canonical());
+        for (String key : List.of("og:image", "twitter:image")) {
+          var el = doc.selectFirst("meta[property=" + key + "],meta[name=" + key + "]");
+          if (el != null) {
+            String url = FeedParser.imageUrl(story.canonical(), el.attr("content"));
+            if (licensed(url)) return new Picture(url, key);
+          }
+        }
+      } catch (Exception e) {
+        log.warn(
+            "event=image_lookup_failed source={} reason={}",
+            source.id,
+            e.getClass().getSimpleName());
+      }
+    }
+    return licensed(story.image()) ? new Picture(story.image(), story.imageSource()) : null;
+  }
+
   public record RunReport(int sources, int inserted, int duplicates, int errors) {}
 
   public record TestResult(int entries, int skipped) {}
@@ -170,11 +218,12 @@ public class IngestionService {
             break;
           }
           try {
+            Picture picture = picture(s, story);
             var id =
                 tx.execute(
                     status -> {
                       renew(owner);
-                      return insert(s, story);
+                      return insert(s, story, picture);
                     });
             if (id == null) counts.duplicates++;
             else counts.inserted++;
@@ -182,7 +231,11 @@ public class IngestionService {
             throw lost;
           } catch (RuntimeException failure) {
             counts.errors++;
-            log.warn("event=feed_item_failed source={} run={}", s.id, runId);
+            log.warn(
+                "event=feed_item_failed source={} run={} reason={}",
+                s.id,
+                runId,
+                failure.getClass().getSimpleName());
           }
         }
       }
@@ -268,7 +321,7 @@ public class IngestionService {
         id);
   }
 
-  private Long insert(Source s, FeedParser.Story story) {
+  private Long insert(Source s, FeedParser.Story story, Picture picture) {
     var classification = Classifier.classify(story, s.name);
     String publication = classification.needsReview() ? "DRAFT" : "PUBLISHED";
     String slug = Classifier.slug(story.title()) + "-" + hash(story.canonical()).substring(0, 16);
@@ -276,8 +329,8 @@ public class IngestionService {
         db.queryForList(
             """
             insert into articles(source_id,title,original_title,slug,original_url,canonical_url,author,
-            source_description,summary,image_url,published_at,reading_time_minutes,processing_status,publication_status)
-            values (?,?,?,?,?,?,?,?,?,?,?,1,'READY',?) on conflict(canonical_url) do nothing returning id
+            source_description,summary,source_item_id,published_at,reading_time_minutes,processing_status,publication_status)
+            values (?,?,?,?,?,?,?,?,?,?,?,1,'READY',?) on conflict do nothing returning id
             """,
             Long.class,
             s.id,
@@ -289,9 +342,40 @@ public class IngestionService {
             story.author(),
             story.preview(),
             story.preview(),
-            story.image(),
+            story.itemId(),
             Timestamp.from(story.published()),
             publication);
+    String image = picture == null ? null : picture.url();
+    db.update(
+        """
+        update articles set source_item_id=coalesce(source_item_id,?),author=coalesce(nullif(?,''),author),
+          summary=case when summary is not distinct from source_description and ?<>'' then ? else summary end,
+          source_description=coalesce(nullif(?,''),source_description),
+          image_url=coalesce(?,image_url),image_source=coalesce(?,image_source),
+          image_alt=case when ? then ? else image_alt end,image_attribution=case when ? then ? else image_attribution end,
+          image_status=case when ? then 'AVAILABLE' when image_status='AVAILABLE' and ? then image_status else ? end
+        where source_id=? and id=(select id from articles where source_id=? and (source_item_id=? or canonical_url=?)
+          order by (source_item_id=? ) desc nulls last limit 1)
+        """,
+        story.itemId(),
+        story.author(),
+        story.preview(),
+        story.preview(),
+        story.preview(),
+        image,
+        picture == null ? null : picture.source(),
+        picture != null,
+        story.title(),
+        picture != null,
+        s.name,
+        picture != null,
+        licensed(s.url),
+        licensed(s.url) ? "MISSING" : "UNREVIEWED",
+        s.id,
+        s.id,
+        story.itemId(),
+        story.canonical(),
+        story.itemId());
     if (ids.isEmpty()) return null;
     long id = ids.getFirst();
     classification
