@@ -36,10 +36,14 @@ class AdminReads {
                        (select count(*) from sources where enabled) as active_sources,
                        (select count(*) from sources where enabled and last_error is not null) as failed_sources,
                        (select count(*) from articles where upper(processing_status)='PENDING') as awaiting_processing,
-                       (select coalesce(sum(calls),0) from ai_usage where usage_date=cast(? as date)) as ai_calls_today,
+                       coalesce(usage.calls,0) as ai_calls_today,
+                       coalesce(usage.input_tokens,0) as ai_input_tokens_today,
+                       coalesce(usage.output_tokens,0) as ai_output_tokens_today,
+                       usage.estimated_cost_usd as ai_estimated_cost_today,
                        (select max(last_success_at) from sources) as last_success,
                        (select coalesce(sum(view_count),0) from article_metrics) as views,
                        (select coalesce(sum(share_count),0) from article_metrics) as shares
+                FROM (SELECT cast(? as date) AS day) dates LEFT JOIN ai_usage usage ON usage.usage_date=dates.day
                 """,
                 todayStart,
                 LocalDate.now(zone)));

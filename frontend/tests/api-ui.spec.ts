@@ -23,6 +23,7 @@ function fixtureStory(id: number) {
 
 function sidebarFixture(route: Route) {
   const path = new URL(route.request().url()).pathname;
+  if (path.endsWith('/daily')) return json(route, { data: { date: '2025-02-05', articles: [] } });
   if (path.endsWith('/stats/today'))
     return json(route, { data: { date: '2025-02-05', categories: [], minutes: 0, total: 0 } });
   if (path.endsWith('/site'))
@@ -64,7 +65,7 @@ test('preserves the first page while appending the cursor page when the reader s
     return sidebarFixture(route);
   });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Tech news in a flash.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Discover what.s next/ })).toBeVisible();
   await expect(page.getByRole('status', { name: 'Loading articles' })).toBeVisible();
   await expect(page.getByRole('article')).toHaveCount(0);
   releaseFeed();
@@ -151,18 +152,54 @@ test('recovers after a failed feed and keeps new stories behind an explicit refr
 });
 
 test('renders each article image and replaces only a broken image', async ({ page }) => {
-  const rows = [1, 2, 3].map(id => ({
-    ...fixtureStory(id), imageUrl:'https://images.example.org/'+id+'.jpg', imageAlt:'Diagram '+id
+  const rows = [1, 2, 3].map((id) => ({
+    ...fixtureStory(id),
+    imageUrl: 'https://images.example.org/' + id + '.jpg',
+    imageAlt: 'Diagram ' + id,
   }));
-  await page.route('https://images.example.org/**', route =>
-    route.request().url().endsWith('3.jpg') ? route.abort() :
-      route.fulfill({path:'public/art/developer.jpg',contentType:'image/jpeg'}));
-  await page.route('**/api/v1/**', route =>
+  await page.route('https://images.example.org/**', (route) =>
+    route.request().url().endsWith('3.jpg')
+      ? route.abort()
+      : route.fulfill({ path: 'public/art/developer.jpg', contentType: 'image/jpeg' }),
+  );
+  await page.route('**/api/v1/**', (route) =>
     new URL(route.request().url()).pathname.endsWith('/articles')
-      ? json(route,{data:rows,nextCursor:null,hasMore:false}) : sidebarFixture(route));
+      ? json(route, { data: rows, nextCursor: null, hasMore: false })
+      : sidebarFixture(route),
+  );
   await page.goto('/');
-  for(const id of [1,2]) await expect(page.getByAltText('Diagram '+id)).toHaveAttribute('src',rows[id-1].imageUrl);
-  const third=page.locator('article img').nth(2);
+  for (const id of [1, 2])
+    await expect(page.getByAltText('Diagram ' + id)).toHaveAttribute('src', rows[id - 1].imageUrl);
+  const third = page.locator('article img').nth(2);
   await third.scrollIntoViewIfNeeded();
-  await expect(third).toHaveAttribute('src','/art/developer.jpg');
+  await expect(third).toHaveAttribute('src', '/art/developer.jpg');
+});
+
+test('following a topic changes the For You request and survives reload', async ({ page }) => {
+  await page.route('**/api/v1/**', (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/topics'))
+      return json(route, { data: [{ slug: 'java', name: 'Java', stories: 1 }] });
+    if (url.pathname.endsWith('/articles'))
+      return json(route, {
+        data: [fixtureStory(url.searchParams.get('following') === 'java' ? 2 : 1)],
+        nextCursor: null,
+        hasMore: false,
+      });
+    return sidebarFixture(route);
+  });
+  await page.goto('/topics');
+  await page.getByRole('button', { name: 'Follow Java' }).click();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Unfollow Java' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await page
+    .getByRole('navigation', { name: 'Main navigation' })
+    .getByRole('link', { name: 'Home' })
+    .click();
+  await expect(page.getByRole('heading', { name: 'Fixture story 2' })).toBeVisible();
+  await page.getByRole('link', { name: 'Latest', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Fixture story 1' })).toBeVisible();
 });

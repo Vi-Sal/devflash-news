@@ -16,13 +16,16 @@ public class NewsApi {
   private final JdbcTemplate db;
   private final ZoneId zone;
   private final String youtube;
+  private final DailyBriefing briefing;
 
   public NewsApi(
       NewsQueries news,
       JdbcTemplate db,
+      DailyBriefing briefing,
       @Value("${app.timezone:Asia/Phnom_Penh}") String zone,
       @Value("${YOUTUBE_CHANNEL_URL:}") String youtube) {
     this.news = news;
+    this.briefing = briefing;
     this.db = db;
     this.zone = ZoneId.of(zone);
     this.youtube = youtube;
@@ -48,7 +51,12 @@ public class NewsApi {
       @RequestParam(required = false) LocalDate to,
       @RequestParam(defaultValue = "newest") String sort,
       @RequestParam(required = false) Integer limit,
-      @RequestParam(required = false) String cursor) {
+      @RequestParam(required = false) String cursor,
+      @RequestParam(name = "feed", required = false) String mode,
+      @RequestParam(required = false) String following,
+      @RequestParam(required = false) Long exclude) {
+    if (following != null && following.length() > 1500)
+      throw NewsQueries.bad("Invalid followed topics");
     return news.feed(
         category,
         topic,
@@ -58,7 +66,86 @@ public class NewsApi {
         sort,
         limit == null ? Integer.parseInt(setting("defaultPageSize", "10")) : limit,
         cursor,
-        zone);
+        zone,
+        mode,
+        following == null || following.isBlank()
+            ? List.of()
+            : Arrays.asList(following.split(",", -1)),
+        exclude,
+        null);
+  }
+
+  NewsQueries.Page feed(
+      String category,
+      String topic,
+      String q,
+      LocalDate from,
+      LocalDate to,
+      String sort,
+      Integer limit,
+      String cursor) {
+    return feed(category, topic, q, from, to, sort, limit, cursor, null, null, null);
+  }
+
+  @GetMapping("/featured")
+  Map<String, ?> featured() {
+    return Map.of("data", news.featured());
+  }
+
+  @GetMapping("/security/highlights")
+  Map<String, ?> securityHighlights() {
+    return Map.of("data", news.securityHighlights());
+  }
+
+  @GetMapping("/security")
+  Map<String, ?> security(
+      @RequestParam(required = false) String severity,
+      @RequestParam(required = false) String incidentType,
+      @RequestParam(required = false) String affected,
+      @RequestParam(required = false) String cve,
+      @RequestParam(required = false) String patch,
+      @RequestParam(required = false) String verification,
+      @RequestParam(required = false) LocalDate from,
+      @RequestParam(required = false) LocalDate to,
+      @RequestParam(defaultValue = "10") int limit,
+      @RequestParam(required = false) String cursor) {
+    var page =
+        news.feed(
+            "security",
+            null,
+            "",
+            from,
+            to,
+            "newest",
+            limit,
+            cursor,
+            zone,
+            null,
+            List.of(),
+            null,
+            new NewsQueries.SecurityFilter(
+                severity, incidentType, affected, cve, patch, verification));
+    var details = new HashMap<String, Map<String, Object>>();
+    if (!page.data().isEmpty()) {
+      var ids = page.data().stream().map(NewsQueries.Story::id).toList();
+      String placeholders = String.join(",", Collections.nCopies(ids.size(), "?"));
+      db.queryForList(
+              "SELECT a.slug,sd.affected_company,sd.affected_product,sd.incident_type,"
+                  + " sd.severity,sd.cve_id,sd.cvss_score,sd.exploitation_status,sd.patch_status,sd.mitigation,"
+                  + NewsQueries.VERIFICATION
+                  + " AS verification FROM articles a LEFT JOIN security_details sd"
+                  + " ON sd.article_id=a.id WHERE a.id IN ("
+                  + placeholders
+                  + ")",
+              ids.toArray())
+          .forEach(row -> details.put((String) row.remove("slug"), row));
+    }
+    var result = new LinkedHashMap<String, Object>();
+    result.put("data", page.data());
+    result.put("nextCursor", page.nextCursor());
+    result.put("hasMore", page.hasMore());
+    result.put("security", details);
+    return result;
   }
 
   @GetMapping("/articles/{slug}")
@@ -73,9 +160,10 @@ public class NewsApi {
             a.id());
     var security =
         db.queryForList(
-            "SELECT"
-                + " affected_company,affected_product,incident_type,severity,cve_id,cvss_score,affected_versions,exploitation_status,patch_status,mitigation,verified_at"
-                + " FROM security_details WHERE article_id=?",
+            "SELECT affected_company,affected_product,incident_type,severity,cve_id,cvss_score,"
+                + " affected_versions,exploitation_status,patch_status,mitigation,verified_at,"
+                + NewsQueries.VERIFICATION
+                + " AS verification FROM security_details sd WHERE article_id=?",
             a.id());
     var detail = new HashMap<String, Object>();
     detail.put("story", a);
@@ -132,7 +220,11 @@ public class NewsApi {
   Map<String, ?> topics() {
     return Map.of(
         "data",
-        db.queryForList("SELECT name,slug,description FROM topics ORDER BY name LIMIT 250"));
+        db.queryForList(
+            "SELECT t.name,t.slug,t.description,count(a.id) AS stories FROM topics t               "
+                + "  LEFT JOIN article_topics x ON x.topic_id=t.id LEFT JOIN articles a ON"
+                + " a.id=x.article_id                 AND a.publication_status='PUBLISHED' GROUP BY"
+                + " t.id ORDER BY t.name LIMIT 250"));
   }
 
   @GetMapping({"/categories/{slug}", "/topics/{slug}"})
@@ -141,7 +233,9 @@ public class NewsApi {
     String sql =
         req.getRequestURI().contains("/categories/")
             ? "SELECT name,slug,description FROM categories WHERE enabled AND slug=?"
-            : "SELECT name,slug,description FROM topics WHERE slug=?";
+            : "SELECT t.name,t.slug,t.description,(SELECT count(*) FROM article_topics x JOIN"
+                + " articles a ON a.id=x.article_id AND a.publication_status='PUBLISHED' WHERE"
+                + " x.topic_id=t.id) AS stories FROM topics t WHERE t.slug=?";
     var rows = db.queryForList(sql, slug);
     if (rows.isEmpty())
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Section unavailable");
@@ -208,45 +302,22 @@ public class NewsApi {
                 Long.class,
                 range),
             "minutes",
-            picks(day).stream().mapToInt(NewsQueries.Story::minutes).sum()));
-  }
-
-  private List<NewsQueries.Story> picks(LocalDate day) {
-    var range = bounds(day);
-    var rows =
-        db.query(
-            """
-            WITH today AS (SELECT id,published_at,featured FROM articles
-              WHERE publication_status='PUBLISHED' AND published_at>=? AND published_at<?),
-            category_leads AS (SELECT DISTINCT ON (c.id) x.id FROM categories c
-              JOIN article_categories ac ON ac.category_id=c.id JOIN today x ON x.id=ac.article_id
-              WHERE c.enabled ORDER BY c.id,x.featured DESC,x.published_at DESC,x.id DESC)
-            SELECT\
-            """
-                + " "
-                + NewsQueries.COLUMNS
-                + NewsQueries.BASE
-                + """
-                AND a.id IN(SELECT id FROM today)
-                ORDER BY (a.id IN(SELECT id FROM category_leads)) DESC,a.featured DESC,a.published_at DESC,a.id DESC LIMIT 15
-                """,
-            NewsQueries::story,
-            range);
-    var selection = new ArrayList<NewsQueries.Story>();
-    int minutes = 0;
-    for (var story : rows) {
-      if (!selection.isEmpty() && minutes + story.minutes() > 15) continue;
-      selection.add(story);
-      minutes += story.minutes();
-      if (minutes >= 10 && selection.size() >= 5) break;
-    }
-    return selection;
+            briefing.minutes(day)));
   }
 
   @GetMapping("/daily")
   Map<String, ?> daily() {
-    var day = LocalDate.now(zone);
-    return Map.of("data", Map.of("date", day, "articles", picks(day)));
+    return Map.of("data", briefing.edition(briefing.today()));
+  }
+
+  @GetMapping("/daily/archive")
+  Map<String, ?> dailyArchive() {
+    return Map.of("data", briefing.archive());
+  }
+
+  @GetMapping("/daily/{date}")
+  Map<String, ?> dailyOn(@PathVariable LocalDate date) {
+    return Map.of("data", briefing.edition(date));
   }
 
   @GetMapping("/site")

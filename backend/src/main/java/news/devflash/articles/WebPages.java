@@ -44,6 +44,9 @@ class WebPages {
     "/search",
     "/explore",
     "/daily",
+    "/daily/{date}",
+    "/topics",
+    "/security",
     "/sources",
     "/trending",
     "/about",
@@ -149,7 +152,9 @@ class WebPages {
         new StringBuilder(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset"
                 + " xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">");
-    for (String path : List.of("/", "/explore", "/trending", "/daily", "/sources", "/about"))
+    for (String path :
+        List.of(
+            "/", "/explore", "/trending", "/daily", "/topics", "/security", "/sources", "/about"))
       add(xml, path);
     for (var a :
         articles.findByPublicationStatusOrderByPublishedAtDescIdDesc(

@@ -2,10 +2,11 @@ import { expect, test } from '@playwright/test';
 
 test('opens the reference edition with the lead story and sidebar', async ({ page }, info) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Tech news in a flash.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Discover what.s next/ })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Today at a Glance' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Trending', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'DevFlash on YouTube' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Learning progress' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Featured story' })).toBeVisible();
   const firstStory = page.getByRole('article').first();
   await expect(firstStory.getByRole('heading')).toBeVisible();
   await expect(firstStory.locator('img')).toHaveJSProperty('complete', true);
@@ -36,7 +37,7 @@ test('opens an article, saves it, and keeps it after a reload', async ({ page })
 
 test('selects a category and searches for a story', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('link', { name: 'Security', exact: true }).first().click();
+  await page.getByRole('link', { name: 'Cybersecurity', exact: true }).first().click();
   await expect(page).toHaveURL(/\/category\/security$/);
   await expect(page.getByRole('article').first()).toBeVisible();
   const input = page.getByPlaceholder(/search tech news/i);
@@ -131,4 +132,47 @@ test('explores a topic, opens the daily briefing, and follows source attribution
     .getByRole('link', { name: 'sources' })
     .click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Source directory');
+});
+
+test('filters Security Watch without implying an unverified incident is confirmed', async ({
+  page,
+}) => {
+  await page.goto('/security');
+  await expect(page.getByRole('article').first()).toContainText('Reported but unverified');
+  await page.getByLabel('Severity').selectOption('critical');
+  await page.getByRole('button', { name: 'Apply filters' }).click();
+  await expect(page).toHaveURL(/severity=critical/);
+  await expect(page.getByRole('heading', { name: 'No matching security stories' })).toBeVisible();
+  await page.getByRole('link', { name: 'Clear filters' }).click();
+  await expect(page.getByRole('article').first()).toBeVisible();
+});
+
+test('opens a dated briefing and tracks reading and bookmark status locally', async ({ page }) => {
+  await page.goto('/daily');
+  await expect(page.getByRole('heading', { name: 'Past briefings' })).toBeVisible();
+  const archive = page.locator('.archive').getByRole('link').first();
+  await archive.click();
+  await expect(page).toHaveURL(/\/daily\/\d{4}-\d{2}-\d{2}$/);
+  const lead = page.getByRole('article').first();
+  await lead.getByRole('button', { name: 'Save article' }).click();
+  await lead.getByRole('heading').getByRole('link').click();
+  await expect(page.getByRole('heading', { name: 'In 30 Seconds' })).toBeVisible();
+  await page
+    .getByRole('navigation', { name: 'Main navigation' })
+    .getByRole('link', { name: /^Saved/ })
+    .click();
+  await expect(page.getByText(/1 read today/)).toBeVisible();
+  const meter = page.getByRole('progressbar', { name: 'Daily reading goal' });
+  await expect(meter).toHaveCSS('border-radius', '999px');
+  await expect(meter.locator('.learning-fill')).toHaveCSS('border-radius', '999px');
+  await expect(meter.locator('.learning-fill')).toHaveCSS('background-image', /linear-gradient/);
+  await page.getByLabel('Daily goal', { exact: true }).selectOption('15');
+  await page.getByLabel('Search saved articles').fill('no matching story');
+  await expect(page.getByRole('heading', { name: 'No saved articles match' })).toBeVisible();
+  await page.getByLabel('Search saved articles').clear();
+  await page.getByRole('button', { name: 'Mark unread' }).click();
+  await expect(page.getByText(/0 read today/)).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel('Daily goal', { exact: true })).toHaveValue('15');
+  await expect(page.getByRole('button', { name: 'Mark as read' })).toBeVisible();
 });

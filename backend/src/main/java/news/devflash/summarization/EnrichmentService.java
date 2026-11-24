@@ -1,5 +1,7 @@
 package news.devflash.summarization;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import org.slf4j.Logger;
@@ -18,14 +20,20 @@ public class EnrichmentService {
   private final TransactionTemplate tx;
   private final ArticleSummarizationService provider;
 
-  private final String zone;
+  private final ZoneId zone;
+
+  @Value("${AI_INPUT_COST_PER_MILLION_USD:}")
+  private String inputRate = "";
+
+  @Value("${AI_OUTPUT_COST_PER_MILLION_USD:}")
+  private String outputRate = "";
 
   public EnrichmentService(
       JdbcTemplate db,
       TransactionTemplate tx,
       ArticleSummarizationService provider,
       @Value("${app.timezone:Asia/Phnom_Penh}") String zone) {
-    this.zone = ZoneId.of(zone).getId();
+    this.zone = ZoneId.of(zone);
     this.db = db;
     this.tx = tx;
     this.provider = provider;
@@ -62,6 +70,7 @@ public class EnrichmentService {
 
     // Reserve budget and one article attempt atomically, then release the connection during the
     // provider call.
+    LocalDate usageDate = LocalDate.now(zone);
     Integer attempt =
         tx.execute(
             status -> {
@@ -85,10 +94,10 @@ public class EnrichmentService {
               if (attempts.isEmpty()) return 0;
               if (db.update(
                       """
-                      insert into ai_usage(usage_date,calls) values ((now() at time zone ?)::date,1)
+                      insert into ai_usage(usage_date,calls) values (?,1)
                       on conflict(usage_date) do update set calls=ai_usage.calls+1 where ai_usage.calls<?
                       """,
-                      zone,
+                      usageDate,
                       limit)
                   == 0) {
                 status.setRollbackOnly();
@@ -104,7 +113,9 @@ public class EnrichmentService {
           articleId);
 
     try {
-      var answer = provider.summarize(evidence);
+      var result = provider.summarize(evidence);
+      trackUsage(usageDate, result);
+      var answer = result.explanation();
       if (answer.isEmpty()) {
         finish(articleId, attempt, "INSUFFICIENT_EVIDENCE");
         return "INSUFFICIENT_EVIDENCE";
@@ -128,6 +139,34 @@ public class EnrichmentService {
       log.warn("event=ai_enrichment_failed article={} attempt={}", articleId, attempt);
       return "FAILED";
     }
+  }
+
+  private void trackUsage(LocalDate date, ArticleSummarizationService.Result result) {
+    if (result.inputTokens() == 0 && result.outputTokens() == 0) return;
+    BigDecimal cost = null;
+    try {
+      var input = new BigDecimal(inputRate);
+      var output = new BigDecimal(outputRate);
+      if (input.signum() >= 0 && output.signum() >= 0)
+        cost =
+            input
+                .multiply(BigDecimal.valueOf(result.inputTokens()))
+                .add(output.multiply(BigDecimal.valueOf(result.outputTokens())))
+                .movePointLeft(6);
+    } catch (NumberFormatException ratesUnavailable) {
+      // Requests and tokens remain measurable without a configured model price.
+    }
+    db.update(
+        """
+        UPDATE ai_usage SET input_tokens=input_tokens+?,output_tokens=output_tokens+?,
+          estimated_cost_usd=CASE WHEN CAST(? AS numeric) IS NULL THEN estimated_cost_usd
+            ELSE coalesce(estimated_cost_usd,0)+? END WHERE usage_date=?
+        """,
+        result.inputTokens(),
+        result.outputTokens(),
+        cost,
+        cost,
+        date);
   }
 
   public void retryPending(int max) {

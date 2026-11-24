@@ -34,3 +34,12 @@
 - The Render service, Supabase credentials, and GitHub scheduler secrets have not been provisioned from this workspace. The application ran against local PostgreSQL.
 - The AI adapter’s fallback, retry, per-article and daily limits were tested with an isolated provider fixture. A live model request requires provider credentials and an explicitly enabled budget.
 - YouTube linking requires the owner’s channel URL. Historical examples appear only in the explicit sample edition.
+
+## V3 reader upgrade
+
+- Expanded the Glacier Glass reader with the new hero, database-selected featured card, briefing preview, responsive navigation, security highlights, and learning progress.
+- Daily editions persist ordered story selections in PostgreSQL. Startup backfills recent missing dates. The existing authenticated collector refreshes today and yesterday. The reader loads stored editions and available source-grounded notes.
+- Added Security Watch with date and metadata filters, the topic directory with browser-local following, and a For You ranking with bounded recency boosts. Saved articles now have search, category filters, saved order, and read status.
+- V6 creates `daily_digests` and `daily_digest_articles`, adds `security_details.verification_status` and a CVE index, and adds token and optional estimated cost totals to `ai_usage`. V1–V5 are preserved.
+- Local verification included a fresh migration and a V5-to-V6 upgrade on isolated PostgreSQL, 23 passing backend tests, 17 passing browser tests, a successful production frontend build, and a Linux AMD64 Docker build. The packaged application returned a ten-item cursor page, a featured story, security rows, and seven dated archive entries from the local database. Desktop and 320px mobile layouts were checked.
+- Production Supabase was inspected read-only and reported V5 with 40 published articles at the start of work. V6 is pending production deployment. Deploy the current branch through the existing Render Docker service, verify the V6 Flyway entry and health endpoint, and run **Collect news** once from GitHub Actions if the scheduled collector has yet to run. The OpenAI path requires provider configuration. Cost estimates require model price inputs.

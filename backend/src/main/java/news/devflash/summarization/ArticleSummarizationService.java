@@ -9,11 +9,17 @@ public interface ArticleSummarizationService {
   record Explanation(
       String whatHappened, String whyItMatters, String keyTakeaway, String developerImpact) {}
 
+  record Result(Optional<Explanation> explanation, int inputTokens, int outputTokens) {
+    static Result empty() {
+      return new Result(Optional.empty(), 0, 0);
+    }
+  }
+
   boolean available();
 
   String provider();
 
   String model();
 
-  Optional<Explanation> summarize(Evidence evidence) throws IOException, InterruptedException;
+  Result summarize(Evidence evidence) throws IOException, InterruptedException;
 }

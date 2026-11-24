@@ -7,6 +7,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.*;
 import java.util.regex.Pattern;
+import news.devflash.articles.DailyBriefing;
 import news.devflash.summarization.EnrichmentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,18 +28,21 @@ public class IngestionService {
   private final FeedClient client;
   private final FeedParser parser;
   private final EnrichmentService enrich;
+  private final DailyBriefing briefing;
 
   public IngestionService(
       JdbcTemplate db,
       TransactionTemplate tx,
       FeedClient client,
       FeedParser parser,
-      EnrichmentService enrich) {
+      EnrichmentService enrich,
+      DailyBriefing briefing) {
     this.db = db;
     this.tx = tx;
     this.client = client;
     this.parser = parser;
     this.enrich = enrich;
+    this.briefing = briefing;
   }
 
   @org.springframework.beans.factory.annotation.Value("${IMAGE_LICENSED_HOSTS:}")
@@ -153,6 +157,7 @@ public class IngestionService {
         errors += c.errors;
       }
       renew(owner);
+      briefing.refresh();
       enrich.retryPending(4);
       return new RunReport(sources.size(), inserted, duplicates, errors);
     } finally {

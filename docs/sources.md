@@ -32,8 +32,8 @@ Set the server variables `AI_ENABLED=true`, `AI_API_KEY` and `AI_MODEL` to enabl
 
 The service reserves budget before calling the provider and counts requests, including unsuccessful requests. Days follow Asia/Phnom_Penh. Each article permits two reserved requests across retries and administrator regeneration. Provider timeouts do not prevent reading the stored publisher preview. Read operations never trigger model calls. [Provider API](https://developers.openai.com/api/reference/resources/chat/)
 
-## Optional official security catalogue
+## Official security catalogue
 
-Select `CISA_KEV` and use the exact [official JSON download](https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json) to import CISA’s dated catalogue additions from the last 30 days. This fixed endpoint is built into the allowlist. On November 23, 2026 it returned HTTP 200 and 1,790 records. CISA distributes the dataset under CC0. [Official catalogue](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) · [CISA data license](https://github.com/cisagov/kev-data/blob/develop/LICENSE)
+V7 enables the existing `CISA_KEV` source. It uses the exact [official JSON download](https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json) to import CISA’s dated catalogue additions from the last 30 days. This fixed endpoint is built into the allowlist. On November 23, 2026 it returned HTTP 200 and 1,790 records. CISA distributes the dataset under CC0. [Official catalogue](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) · [CISA data license](https://github.com/cisagov/kev-data/blob/develop/LICENSE)
 
 An article links to its CVE in CISA’s catalogue. Its publication day is the UTC date the item was added to the catalogue. The publisher supplies the vulnerability name, short description, vendor, product, identifier and recommended action. Exploitation status reflects KEV inclusion. The catalogue does not supply CVSS, affected versions, or patch availability. DevFlash leaves those fields empty.

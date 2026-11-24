@@ -41,6 +41,18 @@ export function Overview({ analytics = false }: { analytics?: boolean }) {
     ? [
         ['Measured article views', stats.views],
         ['Measured shares', stats.shares],
+        ['AI input tokens today', stats.ai_input_tokens_today ?? 0],
+        ['AI output tokens today', stats.ai_output_tokens_today ?? 0],
+        [
+          'Estimated AI cost today',
+          stats.ai_estimated_cost_today == null
+            ? 'Unavailable'
+            : Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                maximumFractionDigits: 6,
+              }).format(stats.ai_estimated_cost_today),
+        ],
         ['AI calls today', stats.ai_calls_today],
       ]
     : [

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ExternalLink, Clock3, ChevronLeft } from 'lucide-react';
 import { format } from 'date-fns';
@@ -14,15 +14,18 @@ export default function ArticlePage() {
     { mark } = useReader(),
     a = query.data?.story,
     terms = useCategories();
-  const articleId = a?.id;
-  const articleSlug = a?.slug;
-  const title = a?.title;
+  const marked = useRef<number | undefined>(undefined);
   useEffect(() => {
-    if (title) document.title = title + ' · DevFlash';
-  }, [title]);
-  useEffect(() => {
-    if (articleId !== undefined && articleSlug) mark(articleId, articleSlug);
-  }, [articleId, articleSlug, mark]);
+    if (!a) {
+      marked.current = undefined;
+      return;
+    }
+    document.title = a.title + ' · DevFlash';
+    if (marked.current !== a.id) {
+      marked.current = a.id;
+      mark(a);
+    }
+  }, [a, mark]);
   if (query.isError)
     return query.error instanceof ApiError && query.error.status === 404 ? (
       <Missing />
@@ -50,7 +53,7 @@ export default function ArticlePage() {
           ))}
         </div>
         <h1>{a.title}</h1>
-        <p className="detail-summary">{a.summary}</p>
+
         <div className="detail-meta">
           <strong>{a.source}</strong>
           <time dateTime={a.publishedAt}>{format(new Date(a.publishedAt), 'MMM d, yyyy')}</time>
@@ -61,12 +64,19 @@ export default function ArticlePage() {
           <Actions story={a} />
         </div>
         <StoryImage story={a} eager />
+        {a.summary && (
+          <section className="article-summary">
+            <h2>In 30 Seconds</h2>
+            <p>{a.summary}</p>
+            <p className="muted">Based on the preview from {a.source}.</p>
+          </section>
+        )}
         {enrichment ? (
           <>
             {Object.entries({
               what_happened: 'What happened',
               why_it_matters: 'Why it matters',
-              key_takeaway: 'Key takeaway',
+              key_takeaway: 'Key takeaways',
               developer_impact: 'Developer impact',
             }).map(
               ([key, label]) =>
@@ -76,6 +86,19 @@ export default function ArticlePage() {
                     <p>{enrichment[key]}</p>
                   </section>
                 ),
+            )}
+            {!!enrichment.key_takeaway && (
+              <section>
+                <h2>Key takeaways</h2>
+                <ul className="takeaways">
+                  {enrichment.key_takeaway
+                    .split('\n')
+                    .filter(Boolean)
+                    .map((point, index) => (
+                      <li key={index}>{point}</li>
+                    ))}
+                </ul>
+              </section>
             )}
             <p className="muted">AI-assisted summary based on the publisher’s preview.</p>
           </>
@@ -106,10 +129,13 @@ export default function ArticlePage() {
           </section>
         )}
         {original && (
-          <a className="button" href={original} target="_blank" rel="noreferrer">
-            Read on {a.source}
-            <ExternalLink size={16} />
-          </a>
+          <section>
+            <h2>Original source</h2>
+            <a className="button" href={original} target="_blank" rel="noreferrer">
+              Read on {a.source}
+              <ExternalLink size={16} />
+            </a>
+          </section>
         )}
         {a.author && <p className="muted">By {a.author}</p>}
         {licensed && (

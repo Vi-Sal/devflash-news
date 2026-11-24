@@ -53,16 +53,18 @@ curl --fail-with-body -X POST \
 | PostgreSQL and Flyway | News, categories, topics, taxonomy overrides, enrichments, advisory metadata, counters, source health, ingestion leases, and audit records |
 | Maven and Docker | Reader assets and backend compiled into one executable jar and one Render web service |
 
-The first two enabled publishers are the Kubernetes Blog and The Go Blog. CISA’s Known Exploited Vulnerabilities catalogue is available as a disabled source. Review the [source register, permission notes, collection rules, and AI configuration](docs/sources.md) before adding feeds.
+The default sources are the Kubernetes Blog, The Go Blog, and CISA’s official Known Exploited Vulnerabilities catalogue. Review the [source register, permission notes, collection rules, and AI configuration](docs/sources.md) before adding feeds.
 
 ### Reading and discovery
 
-- Home and category feeds order by publication time and article ID. The opaque cursor includes both values. Search also carries its relevance score when relevance sorting is selected. Page size defaults to 10 and is capped at 30.
+- Latest and category feeds order by publication time and article ID. For You adds a six-hour ranking boost for editorial features and a twelve-hour boost for matches to up to 12 followed topics. The selected lead uses the newest story marked featured within seven days, with the newest published story as a fallback. The feed excludes the lead on For You. Cursors include the active ranking value, publication time, and article ID. Page size defaults to 10 and is capped at 30.
 - PostgreSQL full-text search covers titles, summaries, topics, and publisher names. The reader supports date ranges and category filters. The GIN article index covers the headline and summary vector.
 - Article details link to original reporting. The collector retains the original title, byline, description, URL, and date separately from editorial overrides. A missing preview sends the reader to the publisher. Optional structured explanations appear only when available.
 - Trending uses the configured recent-day window. Each topic receives one point per distinct publisher, plus individual story contributions. A contribution starts at one, adds a featured-story bonus and a logarithmically capped engagement term, then decays with age in days. The UI reports story counts. Canonical duplicates contribute once.
-- The daily briefing selects category leads first and adds recent coverage toward a ten-minute read when enough stories exist. It uses Asia/Phnom_Penh day boundaries. The release totals use release or launch wording in original headlines within the corresponding category. Security counts describe published security coverage.
-- Bookmarks, read status, recent searches, and appearance are browser-local. Opening a story or sharing it records a measured event. The server counts at most one event of each type per article per session, with a bounded per-session collection.
+- Daily Tech Briefing saves selected article IDs and their order in PostgreSQL. It prioritizes editorial features, sourced security signals, recency, and diversity across categories and publishers, and suppresses near-identical headlines. It selects up to ten stories toward a 10–15 minute estimate when enough coverage exists. Startup fills in missing editions from the last 30 days. Successful ingestion refreshes today and yesterday using Asia/Phnom_Penh date boundaries. Older editions remain accessible at `/daily/{date}`.
+- Followed topics, bookmarks, read status, reading activity, goals, recent searches, and appearance are browser-local. Learning progress starts when an article opens or is manually marked read. It sums the stored article reading estimates and uses the browser’s local calendar for streaks. Saved articles support text search, category filters, saved order, and read status. Opening a story or sharing it records a measured event. The server counts at most one event of each type per article per session, with a bounded per-session collection.
+- Security Watch at `/security` filters source-backed alerts by severity, verification, affected company or product, CVE, incident type, patch status, and publication date. The API uses `/api/v1/security` with cursor pagination. CISA entries can identify confirmed exploitation. Unverified articles are clearly labeled and absent metadata stays blank.
+- The topic directory and topic feeds are available at `/topics` and `/topics/{slug}`. The API accepts `/api/v1/articles?feed=for-you&following=java,spring-boot`. Briefing APIs are `/api/v1/daily`, `/api/v1/daily/{date}`, and `/api/v1/daily/archive`.
 - Spring renders article titles, descriptions, canonical links, Open Graph tags, JSON-LD, and readable summary markup on direct article requests. The sitemap covers the newest 5,000 published articles and the main public pages.
 
 ### Newsroom
@@ -81,8 +83,9 @@ Administrators authenticate with Spring Security, a session cookie, bcrypt hashe
 | `ADMIN_BOOTSTRAP_USERNAME`, `ADMIN_BOOTSTRAP_PASSWORD` | One-time first administrator provisioning. |
 | `INGESTION_TOKEN` | Dedicated bearer secret for the external scheduler. |
 | `FEED_ALLOWED_HOSTS` | Exact approved publisher hostnames separated by commas. Defaults to `go.dev,kubernetes.io`. The exact official CISA catalogue URL is separately recognized. |
-| `YOUTUBE_CHANNEL_URL` | Optional official channel link. The card indicates when the channel link is unavailable. Admin settings can override it. |
+| `YOUTUBE_CHANNEL_URL` | Optional official channel link. The sidebar displays the card when a channel URL is configured. Admin settings can override it. |
 | `AI_ENABLED`, `AI_API_KEY`, `AI_MODEL` | Optional server-side provider configuration. Also enable AI in newsroom settings and assign a positive daily request budget. |
+| `AI_INPUT_COST_PER_MILLION_USD`, `AI_OUTPUT_COST_PER_MILLION_USD` | Optional model price inputs for the newsroom’s estimated AI cost. Reported provider token counts are stored regardless of price configuration. |
 | `APP_BASE_URL` | Canonical site origin. Defaults to Render’s external URL when present, otherwise localhost:8080. Set this for a custom domain. |
 | `JAVA_TOOL_OPTIONS` | Optional JVM sizing. The container defaults to a 62% maximum heap, Serial GC, and exit on out-of-memory. |
 
@@ -96,10 +99,11 @@ The connection pool caps at three connections and allows zero idle connections. 
 | V2 | Adds the five default categories and the two verified enabled feeds. |
 | V3 | Registers the optional CISA catalogue, disabled by default. |
 | V4 | Enables row-level security on newsroom tables and removes direct public and Supabase browser-role grants. The server connects as the schema/table owner. |
-
-Flyway owns schema changes. Hibernate validates the mapping at startup. The migrations contain no sample articles, fabricated engagement, or shared administrator credentials.
-
 | V5 | Adds source-scoped entry identifiers and article image metadata. Clears feed validators once so existing entries can be enriched on their next import. |
+| V6 | Creates persistent daily editions and their ordered article links, adds an advisory verification field and CVE index, and extends AI usage with token totals and optional USD estimates. |
+| V7 | Enables the existing official CISA catalogue source. |
+
+Flyway owns schema changes. Hibernate validates the mapping at startup.
 
 Set `IMAGE_LICENSED_HOSTS` to comma-separated publisher and image hosts whose images you have permission to display with publisher attribution. Article-page requests also require the host in `FEED_ALLOWED_HOSTS`. A blank image allowlist uses category illustrations. Import checks Media RSS content, thumbnails, image enclosures, page social metadata and JSON Feed images. Stored image metadata serves reader requests.
 
@@ -114,7 +118,7 @@ Set `IMAGE_LICENSED_HOSTS` to comma-separated publisher and image hosts whose im
 ### Post-deployment verification
 
 - [ ] Health returns HTTP 200 with `data.status` equal to `UP`.
-- [ ] Flyway has applied all five migrations. The JDBC role owns the application tables.
+- [ ] Flyway has applied all seven migrations. The JDBC role owns the application tables.
 - [ ] Logged-out access to admin APIs is denied. Administrator login succeeds over HTTPS, session cookies are secure, and logout revokes access.
 - [ ] A manual import records per-source results. Repeating a completed import produces no duplicate articles.
 - [ ] Article links, pagination, search, categories, saved items, daily briefing, and dark mode work on the deployed origin.

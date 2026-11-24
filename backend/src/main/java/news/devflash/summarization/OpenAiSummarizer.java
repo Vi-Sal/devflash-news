@@ -22,7 +22,7 @@ class OpenAiSummarizer implements ArticleSummarizationService {
       If the excerpt cannot support a factual explanation, return {"supported":false}.
       Otherwise respond in JSON with supported:true, evidence (an exact supporting phrase of at least 12 characters
       from the excerpt), whatHappened (one original sentence), whyItMatters (practical implications only when
-      supported), keyTakeaway, and developerImpact (only if supported). Use empty strings for unsupported optional
+      supported), keyTakeaways (an array of up to four distinct, source-supported points), and developerImpact (only if supported). Use empty strings for unsupported optional
       fields. Keep each field under 300 characters. Do not provide exploit or attack procedures.
       """;
   private final boolean enabled;
@@ -58,9 +58,8 @@ class OpenAiSummarizer implements ArticleSummarizationService {
     return model;
   }
 
-  public Optional<Explanation> summarize(Evidence evidence)
-      throws IOException, InterruptedException {
-    if (evidence.excerpt().length() < 100) return Optional.empty();
+  public Result summarize(Evidence evidence) throws IOException, InterruptedException {
+    if (evidence.excerpt().length() < 100) return Result.empty();
     var payload =
         Map.of(
             "model",
@@ -85,26 +84,49 @@ class OpenAiSummarizer implements ArticleSummarizationService {
     var response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
     if (response.statusCode() != 200 || response.body().length > 65536)
       throw new IOException("Provider request failed");
-    var choice = json.readTree(response.body()).path("choices").path(0);
-    if (!"stop".equals(choice.path("finish_reason").asText())) return Optional.empty();
+    var body = json.readTree(response.body());
+    var usage = body.path("usage");
+    int inputTokens = Math.max(0, usage.path("prompt_tokens").asInt());
+    int outputTokens = Math.max(0, usage.path("completion_tokens").asInt());
+    var empty = new Result(Optional.empty(), inputTokens, outputTokens);
+    var choice = body.path("choices").path(0);
+    if (!"stop".equals(choice.path("finish_reason").asText())) return empty;
     String content = choice.path("message").path("content").asText();
-    if (content.isBlank()) return Optional.empty();
+    if (content.isBlank()) return empty;
     var answer = json.readTree(content);
-    if (!answer.path("supported").asBoolean(false)) return Optional.empty();
+    if (!answer.path("supported").asBoolean(false)) return empty;
     String support = answer.path("evidence").asText("").strip();
     String event = field(answer, "whatHappened");
     if (support.length() < 12 || !evidence.excerpt().contains(support) || event == null)
-      return Optional.empty();
-    return Optional.of(
-        new Explanation(
-            event,
-            field(answer, "whyItMatters"),
-            field(answer, "keyTakeaway"),
-            field(answer, "developerImpact")));
+      return empty;
+    return new Result(
+        Optional.of(
+            new Explanation(
+                event,
+                field(answer, "whyItMatters"),
+                takeaways(answer),
+                field(answer, "developerImpact"))),
+        inputTokens,
+        outputTokens);
+  }
+
+  private static String takeaways(JsonNode answer) throws IOException {
+    var items = answer.path("keyTakeaways");
+    if (!items.isArray()) return field(answer, "keyTakeaway");
+    if (items.size() > 4) throw new IOException("Too many takeaways");
+    var lines = new java.util.LinkedHashSet<String>();
+    for (var item : items) {
+      String point = text(item);
+      if (point != null) lines.add(point);
+    }
+    return lines.isEmpty() ? null : String.join("\n", lines);
   }
 
   private static String field(JsonNode answer, String key) throws IOException {
-    var value = answer.path(key);
+    return text(answer.path(key));
+  }
+
+  private static String text(JsonNode value) throws IOException {
     if (!value.isTextual() || value.asText().isBlank()) return null;
     String text = value.asText().strip();
     if (text.length() > 500 || text.chars().anyMatch(Character::isISOControl))

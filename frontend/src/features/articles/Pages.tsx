@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   Search as SearchIcon,
   Bookmark,
@@ -23,7 +23,7 @@ import {
   useCategories,
   useData,
 } from '../../components/common';
-import { safeUrl, type Stats, type Story, type Trend, type Term } from '../../services/news';
+import { safeUrl, type DailyEdition, type Story, type Trend, type Term } from '../../services/news';
 import { read, useReader } from '../../app/reader';
 export function Explore() {
   const cats = useCategories(),
@@ -41,9 +41,12 @@ export function Explore() {
             </Link>
           ))}
         </div>
-        <h2 className="section-title">Browse topics</h2>
+        <div className="stream-heading">
+          <h2>Browse topics</h2>
+          <Link to="/topics">View all topics</Link>
+        </div>
         <div className="tag-row">
-          {topics.data?.map((t) => (
+          {topics.data?.slice(0, 14).map((t) => (
             <Link className="pill" to={'/topics/' + t.slug} key={t.slug}>
               {t.name}
             </Link>
@@ -69,7 +72,22 @@ export function Explore() {
   );
 }
 export function Saved() {
-  const { saved } = useReader();
+  const { saved, ids, setRead } = useReader();
+  const categories = useCategories();
+  const [search, setSearch] = useState('');
+  const [category, setCategory] = useState('');
+  const [order, setOrder] = useState('newest');
+  const term = search.trim().toLowerCase();
+  const matches = saved.filter(
+    (story) =>
+      (!category || story.categories.includes(category)) &&
+      (!term ||
+        [story.title, story.summary, story.source, ...story.topics]
+          .join(' ')
+          .toLowerCase()
+          .includes(term)),
+  );
+  if (order === 'oldest') matches.reverse();
   return (
     <div className="columns">
       <div>
@@ -77,8 +95,43 @@ export function Saved() {
           title={'Saved articles' + (saved.length ? ' (' + saved.length + ')' : '')}
           sub="Your reading list, saved in this browser."
         />
-        {saved.length ? (
-          saved.map((a) => <NewsCard key={a.id} story={a} />)
+        {!!saved.length && (
+          <div className="glass filter-panel filters">
+            <label>
+              Search saved articles
+              <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </label>
+            <label>
+              Category
+              <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                <option value="">All categories</option>
+                {categories.map((c) => (
+                  <option key={c.slug} value={c.slug}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Saved date
+              <select value={order} onChange={(e) => setOrder(e.target.value)}>
+                <option value="newest">Newest saved first</option>
+                <option value="oldest">Oldest saved first</option>
+              </select>
+            </label>
+          </div>
+        )}
+        {matches.length ? (
+          matches.map((story) => (
+            <section key={story.id} className="saved-item">
+              <NewsCard story={story} />
+              <button className="button" onClick={() => setRead(story, !ids.includes(story.id))}>
+                {ids.includes(story.id) ? 'Mark unread' : 'Mark as read'}
+              </button>
+            </section>
+          ))
+        ) : saved.length ? (
+          <Empty title="No saved articles match">Try changing the search or category.</Empty>
         ) : (
           <Empty title="Your reading list starts here">
             <Bookmark size={16} /> Save a story from the feed to read it later.{' '}
@@ -210,41 +263,99 @@ export function SearchPage() {
   );
 }
 export function Daily() {
-  const day = useData<{ date: string; articles: Story[] }>('/daily'),
-    stats = useData<Stats>('/stats/today'),
-    { share } = useReader();
+  const { date } = useParams();
+  const day = useData<DailyEdition>(date ? '/daily/' + date : '/daily');
+  const archive = useData<string[]>('/daily/archive');
+  const terms = useCategories();
+  const { share } = useReader();
   if (day.isError) return <Failure retry={day.refetch} />;
   if (!day.data) return <Skeleton />;
+  const edition = day.data;
+  const count = edition.articles.length;
+  const minutes = edition.minutes ?? edition.articles.reduce((sum, a) => sum + a.minutes, 0);
   return (
     <div className="columns">
       <div>
-        <Intro
-          title="Daily briefing"
-          sub={
-            __DEMO__
-              ? 'Highlights from the historical sample edition.'
-              : format(new Date(day.data.date + 'T12:00:00'), 'EEEE, MMMM d, yyyy')
-          }
-        />
-        <div className="brief-bar">
-          <span>
-            {stats.data?.total ?? '…'} stories · {stats.data?.minutes ?? '…'} min briefing
-          </span>
-          <button
-            className="button"
-            onClick={() => void share('/daily', 'DevFlash daily briefing')}
-          >
-            <Share2 size={16} />
-            Share briefing
-          </button>
-        </div>
-        {day.data.articles.length ? (
-          day.data.articles.map((a) => <NewsCard key={a.id} story={a} />)
-        ) : (
-          <Empty title="Today’s briefing is clear">
-            The first published stories of the day will appear here.
-          </Empty>
-        )}
+        <section className="glass edition-panel">
+          <Intro
+            title="Daily briefing"
+            sub={format(new Date(edition.date + 'T12:00:00'), 'EEEE, MMMM d, yyyy')}
+          />
+          <p>
+            {count} {count === 1 ? 'story' : 'stories'} · {minutes} min
+          </p>
+          {!!count && (
+            <div className="tag-row edition-categories">
+              {Object.entries(edition.categories ?? {}).map(([slug, total]) => (
+                <Link to={'/category/' + slug} className="badge" key={slug}>
+                  {terms.find((term) => slug === term.slug)?.name ?? slug} · {total}
+                </Link>
+              ))}
+            </div>
+          )}
+          <div className="brief-bar">
+            {!!count && (
+              <a className="button" href="#briefing-stories">
+                Start reading
+              </a>
+            )}
+            <button
+              className="button"
+              onClick={() =>
+                void share(date ? '/daily/' + date : '/daily', 'DevFlash daily briefing')
+              }
+            >
+              <Share2 size={16} /> Share briefing
+            </button>
+            {date && <Link to="/daily">Today’s edition</Link>}
+          </div>
+        </section>
+        <section id="briefing-stories" aria-label="Briefing stories">
+          {count ? (
+            edition.articles.map((story) => {
+              const notes = edition.notes?.[story.id];
+              return (
+                <div key={story.id} className="briefing-story">
+                  <NewsCard story={story} />
+                  {(notes?.whyItMatters || notes?.keyTakeaway) && (
+                    <div className="glass briefing-notes">
+                      {notes.whyItMatters && (
+                        <p>
+                          <strong>Why it matters</strong> {notes.whyItMatters}
+                        </p>
+                      )}
+                      {notes.keyTakeaway && (
+                        <p>
+                          <strong>Key takeaway</strong> {notes.keyTakeaway.split('\n')[0]}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          ) : (
+            <Empty title="No edition for this date">Browse the archive for recent briefings.</Empty>
+          )}
+        </section>
+        <section className="glass edition-panel archive">
+          <h2>Past briefings</h2>
+          {archive.isError && <p>Archive temporarily unavailable.</p>}
+          {!archive.isError && !archive.data?.length && (
+            <p>{archive.isPending ? 'Loading editions…' : 'No editions in the archive yet.'}</p>
+          )}
+          <ul className="tag-row">
+            {archive.data
+              ?.filter((day) => day !== edition.date)
+              .map((day) => (
+                <li key={day}>
+                  <Link className="pill" to={'/daily/' + day}>
+                    {day}
+                  </Link>
+                </li>
+              ))}
+          </ul>
+        </section>
       </div>
       <Sidebar />
     </div>

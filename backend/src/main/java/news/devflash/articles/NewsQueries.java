@@ -118,6 +118,32 @@ public class NewsQueries {
       int limit,
       String cursor,
       ZoneId zone) {
+    return feed(
+        category, topic, query, from, to, sort, limit, cursor, zone, null, List.of(), null, null);
+  }
+
+  record SecurityFilter(
+      String severity,
+      String incidentType,
+      String affected,
+      String cve,
+      String patch,
+      String verification) {}
+
+  Page feed(
+      String category,
+      String topic,
+      String query,
+      LocalDate from,
+      LocalDate to,
+      String sort,
+      int limit,
+      String cursor,
+      ZoneId zone,
+      String mode,
+      List<String> followed,
+      Long exclude,
+      SecurityFilter security) {
     validSlug(category);
     validSlug(topic);
     if (limit < 1
@@ -147,6 +173,19 @@ public class NewsQueries {
       where.append(" AND a.published_at<:end");
       args.put("end", to.plusDays(1).atStartOfDay(zone).toOffsetDateTime());
     }
+    if (exclude != null) {
+      if (exclude < 1) throw bad("Invalid excluded article");
+      where.append(" AND a.id<>:excluded");
+      args.put("excluded", exclude);
+    }
+    if (security != null) {
+      int at = where.indexOf(" WHERE");
+      where.insert(at, " LEFT JOIN security_details sd ON sd.article_id=a.id");
+      appendSecurity(where, args, security);
+    }
+    if (mode != null && !Set.of("for-you", "latest").contains(mode)) throw bad("Invalid feed");
+    if (followed.size() > 12) throw bad("Follow up to 12 topics");
+    followed.forEach(NewsQueries::validSlug);
     String rank = "0.0::double precision";
     if (!query.isBlank()) {
       args.put("q", query.strip());
@@ -162,6 +201,18 @@ public class NewsQueries {
               + "))");
       if (sort.equals("relevance"))
         rank = "ts_rank(a.search_vector," + search + ")::double precision";
+    }
+    if ("for-you".equals(mode)) {
+      // A bounded time boost keeps preferences from displacing newer editorial coverage
+      // indefinitely.
+      rank = "(extract(epoch FROM a.published_at) + CASE WHEN a.featured THEN 21600 ELSE 0 END";
+      if (!followed.isEmpty()) {
+        args.put("following", followed);
+        rank +=
+            " + CASE WHEN EXISTS(SELECT 1 FROM article_topics f JOIN topics t ON t.id=f.topic_id"
+                + " WHERE f.article_id=a.id AND t.slug IN (:following)) THEN 43200 ELSE 0 END";
+      }
+      rank += ")::double precision";
     }
     String paging = "";
     if (cursor != null) {
@@ -195,6 +246,92 @@ public class NewsQueries {
     return new Page(rows, next, more);
   }
 
+  List<Story> featured() {
+    return db.query(
+        "SELECT "
+            + COLUMNS
+            + BASE
+            + """
+            AND a.published_at <= now()
+            ORDER BY (a.featured AND a.published_at>=now()-interval '7 days') DESC,
+            a.published_at DESC,a.id DESC LIMIT 1
+            """,
+        Map.of(),
+        NewsQueries::story);
+  }
+
+  List<Story> securityHighlights() {
+    return db.query(
+        "SELECT "
+            + COLUMNS
+            + BASE
+            + """
+            AND a.published_at BETWEEN now()-interval '14 days' AND now()
+            AND EXISTS (SELECT 1 FROM article_categories ac JOIN categories c ON c.id=ac.category_id
+              WHERE ac.article_id=a.id AND c.slug='security' AND c.enabled)
+            ORDER BY EXISTS (SELECT 1 FROM security_details sd WHERE sd.article_id=a.id
+              AND (sd.exploitation_status='Confirmed by CISA' OR lower(sd.severity) IN ('high','critical'))) DESC,
+              a.published_at DESC, a.id DESC LIMIT 3
+            """,
+        Map.of(),
+        NewsQueries::story);
+  }
+
+  static final String VERIFICATION =
+      """
+      CASE WHEN sd.exploitation_status='Confirmed by CISA' THEN 'Active exploitation confirmed'
+           WHEN sd.verification_status IS NOT NULL THEN sd.verification_status
+           WHEN sd.cve_id IS NOT NULL AND sd.verified_at IS NOT NULL THEN 'Vulnerability disclosed'
+           ELSE 'Reported but unverified' END
+      """;
+
+  private static void appendSecurity(
+      StringBuilder where, Map<String, Object> args, SecurityFilter filter) {
+    if (filter.severity() != null) {
+      if (!Set.of("critical", "high", "medium", "low", "unknown").contains(filter.severity()))
+        throw bad("Invalid severity");
+      where.append(" AND coalesce(nullif(lower(sd.severity),''),'unknown')=:severity");
+      args.put("severity", filter.severity());
+    }
+    match(where, args, "incidentType", "sd.incident_type", filter.incidentType());
+    match(where, args, "patch", "sd.patch_status", filter.patch());
+    match(
+        where,
+        args,
+        "affected",
+        "concat_ws(' ',sd.affected_company,sd.affected_product)",
+        filter.affected());
+    if (filter.cve() != null) {
+      if (!filter.cve().matches("(?i)CVE-[0-9]{4}-[0-9]{4,19}"))
+        throw bad("Invalid CVE identifier");
+      where.append(" AND upper(sd.cve_id)=:cve");
+      args.put("cve", filter.cve().toUpperCase(Locale.ROOT));
+    }
+    if (filter.verification() != null) {
+      if (!Set.of(
+              "Active exploitation confirmed",
+              "Vulnerability disclosed",
+              "Reported but unverified",
+              "Confirmed",
+              "Investigation ongoing")
+          .contains(filter.verification())) throw bad("Invalid verification status");
+      where.append(" AND (" + VERIFICATION + ")=:verification");
+      args.put("verification", filter.verification());
+    }
+  }
+
+  private static void match(
+      StringBuilder where,
+      Map<String, Object> args,
+      String parameter,
+      String column,
+      String value) {
+    if (value == null || value.isBlank()) return;
+    if (value.length() > 100) throw bad("Invalid security filter");
+    where.append(" AND strpos(lower(" + column + "),lower(:" + parameter + "))>0");
+    args.put(parameter, value.strip());
+  }
+
   public Story one(String slug) {
     validSlug(slug);
     return db
@@ -217,7 +354,9 @@ public class NewsQueries {
             AND a.id<>:id AND (EXISTS(SELECT 1 FROM article_topics x JOIN article_topics y USING(topic_id)
               WHERE x.article_id=a.id AND y.article_id=:id) OR EXISTS(SELECT 1 FROM article_categories x
               JOIN article_categories y USING(category_id) WHERE x.article_id=a.id AND y.article_id=:id))
-            ORDER BY a.published_at DESC,a.id DESC LIMIT 4
+            ORDER BY (SELECT count(*) FROM article_topics x JOIN article_topics y USING(topic_id)
+              WHERE x.article_id=a.id AND y.article_id=:id) DESC,
+              a.published_at DESC,a.id DESC LIMIT 4
             """,
         Map.of("id", story.id()),
         NewsQueries::story);

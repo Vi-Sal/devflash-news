@@ -96,6 +96,7 @@ export function sampleResponse(path: string, f: Filters) {
   const topics = archive.map((a) => ({
     slug: a.topics[0],
     name: names[a.topics[0]],
+    stories: archive.filter((item) => item.topics.includes(a.topics[0])).length,
     description: 'From the DevFlash sample archive.',
   }));
   const stats = {
@@ -120,9 +121,21 @@ export function sampleResponse(path: string, f: Filters) {
         timezone: 'Asia/Phnom_Penh',
       },
     };
-  if (path === '/articles' || path === '/search') {
+  if (path === '/featured') return { data: archive.filter((story) => story.featured).slice(0, 1) };
+  if (path === '/security/highlights')
+    return { data: archive.filter((story) => story.categories.includes('security')).slice(0, 3) };
+  if (path === '/articles' || path === '/search' || path === '/security') {
     const matching = archive.filter(
       (a) =>
+        (path !== '/security' ||
+          (a.categories.includes('security') &&
+            (!f.severity || f.severity === 'unknown') &&
+            !f.cve &&
+            !f.affected &&
+            !f.incidentType &&
+            !f.patch &&
+            (!f.verification || f.verification === 'Reported but unverified'))) &&
+        String(a.id) !== f.exclude &&
         (!f.category || a.categories.includes(f.category)) &&
         (!f.topic || a.topics.includes(f.topic)) &&
         (!f.from || a.publishedAt.slice(0, 10) >= f.from) &&
@@ -133,13 +146,27 @@ export function sampleResponse(path: string, f: Filters) {
             .toLowerCase()
             .includes(f.q.toLowerCase())),
     );
-    if (path === '/search' && f.sort !== 'relevance')
+    if (f.following) {
+      const followed = new Set(f.following.split(','));
+      matching.sort(
+        (a, b) =>
+          Number(b.topics.some((topic) => followed.has(topic))) -
+          Number(a.topics.some((topic) => followed.has(topic))),
+      );
+    }
+    if (f.feed === 'latest' || (path === '/search' && f.sort !== 'relevance'))
       matching.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
     const offset = Number(f.cursor || 0),
       size = Number(f.limit || 3),
       more = offset + size < matching.length;
     return {
       data: matching.slice(offset, offset + size),
+      security:
+        path === '/security'
+          ? Object.fromEntries(
+              matching.map((a) => [a.slug, { verification: 'Reported but unverified' }]),
+            )
+          : undefined,
       nextCursor: more ? String(offset + size) : null,
       hasMore: more,
     };
@@ -170,7 +197,13 @@ export function sampleResponse(path: string, f: Filters) {
     return {
       data: archive.map((a) => ({ name: a.source, website_url: new URL(a.originalUrl).origin })),
     };
+  const archiveDays = [...new Set(archive.map((a) => a.publishedAt.slice(0, 10)))].sort().reverse();
+  if (path === '/daily/archive') return { data: archiveDays };
   if (path === '/daily') return { data: { date: stats.date, articles: archive.slice(0, 5) } };
+  if (path.startsWith('/daily/'))
+    return {
+      data: { date: item, articles: archive.filter((a) => a.publishedAt.startsWith(item)) },
+    };
   if (path === '/stats/today') return { data: stats };
   throw new ApiError(404, 'Page unavailable');
 }

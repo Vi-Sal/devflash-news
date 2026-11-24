@@ -1,5 +1,6 @@
 import { CalendarDays, TrendingUp, Clock3, Play, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { LearningProgress, SecurityHighlights } from './ReaderWidgets';
 import { useData } from './common';
 import { safeUrl, type Stats, type Site, type Trend } from '../services/news';
 const rows = [
@@ -64,6 +65,7 @@ export default function Sidebar() {
           </p>
         )}
       </section>
+      <SecurityHighlights />
       <section className="glass widget trending">
         <Link to="/trending" className="widget-title">
           <TrendingUp />
@@ -92,27 +94,21 @@ export default function Sidebar() {
           </p>
         )}
       </section>
-      <section className="glass widget youtube">
-        <div className="widget-title">
-          <span className="video-icon">
-            <Play size={13} fill="currentColor" />
-          </span>
-          <h2>DevFlash on YouTube</h2>
-        </div>
-        <p>In-depth explainers, tutorials, and tech breakdowns.</p>
-        {channel ? (
+      <LearningProgress />
+      {channel && (
+        <section className="glass widget youtube">
+          <div className="widget-title">
+            <span className="video-icon">
+              <Play size={13} fill="currentColor" />
+            </span>
+            <h2>DevFlash on YouTube</h2>
+          </div>
+          <p>In-depth explainers, tutorials, and tech breakdowns.</p>
           <a className="youtube-action" href={channel} target="_blank" rel="noreferrer">
-            <Play size={17} fill="currentColor" />
-            Watch on YouTube
-            <ChevronRight size={17} />
+            <Play size={16} fill="currentColor" /> Watch on YouTube <ChevronRight size={17} />
           </a>
-        ) : (
-          <span className="youtube-action pending">
-            <Play size={16} fill="currentColor" />
-            Channel link coming soon
-          </span>
-        )}
-      </section>
+        </section>
+      )}
     </aside>
   );
 }

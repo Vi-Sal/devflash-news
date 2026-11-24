@@ -44,7 +44,8 @@ class PublicNewsTest {
       assertEquals(0, flyway.migrate().migrationsExecuted);
       var db = new JdbcTemplate(ds);
       var reader = new NewsQueries(new NamedParameterJdbcTemplate(ds));
-      var api = new NewsApi(reader, db, "Asia/Phnom_Penh", "");
+      var briefing = new DailyBriefing(db, "Asia/Phnom_Penh");
+      var api = new NewsApi(reader, db, briefing, "Asia/Phnom_Penh", "");
       db.update(
           """
           INSERT INTO articles(source_id,title,original_title,slug,original_url,canonical_url,summary,published_at,publication_status)
@@ -93,6 +94,77 @@ class PublicNewsTest {
               .size());
       assertThrows(ResponseStatusException.class, () -> reader.one("fixture-4"));
       assertEquals(1, reader.related(reader.one("fixture-1")).size());
+      var personalized =
+          api.feed(null, null, "", null, null, "newest", 1, null, "for-you", "runtime", null);
+      assertEquals(1L, personalized.data().getFirst().id());
+      assertEquals(
+          3L,
+          api.feed(
+                  null,
+                  null,
+                  "",
+                  null,
+                  null,
+                  "newest",
+                  1,
+                  personalized.nextCursor(),
+                  "for-you",
+                  "runtime",
+                  null)
+              .data()
+              .getFirst()
+              .id());
+      assertEquals(
+          3L,
+          api.feed(null, null, "", null, null, "newest", 1, null, "latest", null, null)
+              .data()
+              .getFirst()
+              .id());
+      assertThrows(
+          ResponseStatusException.class,
+          () ->
+              api.feed(null, null, "", null, null, "newest", 1, null, "for-you", "runtime,", null));
+
+      db.update("INSERT INTO article_categories SELECT 2,id FROM categories WHERE slug='security'");
+      db.update(
+          """
+          INSERT INTO security_details(article_id,cve_id,severity,affected_product,patch_status,verification_status)
+          VALUES (2,'CVE-2020-1234','High','Fixture product','Available','Vulnerability disclosed')
+          """);
+      var security =
+          api.security(
+              "high",
+              null,
+              "fixture",
+              "cve-2020-1234",
+              "available",
+              "Vulnerability disclosed",
+              null,
+              null,
+              10,
+              null);
+      assertEquals(1, ((List<?>) security.get("data")).size());
+      assertEquals(
+          List.of(),
+          api.security("critical", null, null, null, null, null, null, null, 10, null).get("data"));
+      assertTrue(((Map<?, ?>) security.get("security")).containsKey("fixture-2"));
+
+      db.update(
+          """
+          INSERT INTO article_enrichments(article_id,what_happened,why_it_matters,key_takeaway,generation_status)
+          VALUES (1,'A sourced change','Practical impact','A supported point','GENERATED')
+          """);
+      assertNotNull(((Map<?, ?>) api.article("fixture-1").get("data")).get("enrichment"));
+      assertNull(((Map<?, ?>) api.article("fixture-2").get("data")).get("enrichment"));
+      briefing.generate(briefing.today());
+      briefing.generate(briefing.today());
+      assertEquals(3, briefing.edition(briefing.today()).articles().size());
+      assertEquals(List.of(briefing.today()), briefing.archive());
+      assertEquals(
+          "A supported point", briefing.edition(briefing.today()).notes().get(1L).keyTakeaway());
+      db.update("UPDATE articles SET title='New story' WHERE id=3");
+      assertEquals(3, briefing.edition(briefing.today()).articles().size());
+      assertEquals(List.of(), briefing.edition(briefing.today().minusDays(2)).articles());
       var stats = (Map<?, ?>) api.stats().get("data");
       assertEquals(3L, stats.get("total"));
       assertEquals(3, stats.get("minutes"));

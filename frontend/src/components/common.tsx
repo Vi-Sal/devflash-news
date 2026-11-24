@@ -39,29 +39,37 @@ export function useCategories() {
 }
 export function Pills({ active }: { active?: string }) {
   const categories = useCategories();
+  const tabs = [
+    { slug: 'for-you', name: 'For You', path: '/' },
+    { slug: 'latest', name: 'Latest', path: '/?feed=latest' },
+    ...categories.map((category) => ({
+      ...category,
+      name:
+        category.slug === 'security'
+          ? 'Cybersecurity'
+          : category.slug === 'new-tech'
+            ? 'New Technology'
+            : category.name,
+      path: '/category/' + category.slug,
+    })),
+  ];
   return (
     <nav className="pills" aria-label="News categories">
-      <Link
-        to="/"
-        className={!active ? 'pill active' : 'pill'}
-        aria-current={!active ? 'page' : undefined}
-      >
-        For You
-      </Link>
-      {categories.map((c) => (
+      {tabs.map((tab) => (
         <Link
-          key={c.slug}
-          to={'/category/' + c.slug}
-          className={'pill' + (active === c.slug ? ' active' : '')}
-          aria-current={active === c.slug ? 'page' : undefined}
+          key={tab.slug}
+          to={tab.path}
+          className={'pill' + (tab.slug === (active ?? 'for-you') ? ' active' : '')}
+          aria-current={tab.slug === (active ?? 'for-you') ? 'page' : undefined}
         >
-          <CategoryIcon slug={c.icon || c.slug} />
-          {c.name}
+          {!['for-you', 'latest'].includes(tab.slug) && <CategoryIcon slug={tab.slug} />}
+          {tab.name}
         </Link>
       ))}
     </nav>
   );
 }
+
 export function Empty({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
     <section className="glass state">

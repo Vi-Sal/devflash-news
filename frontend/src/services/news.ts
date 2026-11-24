@@ -18,12 +18,33 @@ export interface Story {
   categories: string[];
   topics: string[];
 }
+export interface Advisory {
+  affected_company?: string;
+  affected_product?: string;
+  incident_type?: string;
+  severity?: string;
+  cve_id?: string;
+  cvss_score?: number;
+  exploitation_status?: string;
+  patch_status?: string;
+  mitigation?: string;
+  verification?: string;
+}
+export interface DailyEdition {
+  date: string;
+  articles: Story[];
+  minutes?: number;
+  categories?: Record<string, number>;
+  notes?: Record<number, { whyItMatters?: string; keyTakeaway?: string }>;
+}
 export interface Page {
+  security?: Record<string, Advisory>;
   data: Story[];
   nextCursor: string | null;
   hasMore: boolean;
 }
 export interface Term {
+  stories?: number;
   slug: string;
   name: string;
   description: string;
@@ -54,6 +75,15 @@ export interface Detail {
   security: Record<string, string> | null;
 }
 export type Filters = {
+  feed?: 'latest' | 'for-you';
+  following?: string;
+  exclude?: string;
+  severity?: string;
+  incidentType?: string;
+  affected?: string;
+  cve?: string;
+  patch?: string;
+  verification?: string;
   category?: string;
   topic?: string;
   q?: string;

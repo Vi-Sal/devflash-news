@@ -6,12 +6,14 @@ import NewsCard from './NewsCard';
 export default function Feed({
   filters = {},
   search = false,
+  security = false,
 }: {
   filters?: Filters;
   search?: boolean;
+  security?: boolean;
 }) {
   const client = useQueryClient(),
-    path = search ? '/search' : '/articles',
+    path = security ? '/security' : search ? '/search' : '/articles',
     anchor = useRef<HTMLDivElement>(null),
     key = ['feed', path, filters];
   const feed = useInfiniteQuery({
@@ -24,7 +26,7 @@ export default function Feed({
   });
   const head = useQuery({
     queryKey: ['head', path, filters],
-    enabled: !__DEMO__ && !search && !!feed.data,
+    enabled: !__DEMO__ && !search && !security && !!feed.data,
     queryFn: ({ signal }) => request<Page>(path, { ...filters, limit: '1' }, signal),
     refetchInterval: 60000,
     staleTime: 60000,
@@ -58,6 +60,7 @@ export default function Feed({
       first &&
       first.id !== stories[0]?.id &&
       (!stories.length || first.publishedAt >= stories[0].publishedAt);
+  const metadata = Object.assign({}, ...(feed.data?.pages.map((page) => page.security) ?? []));
   return (
     <div className="feed">
       {fresh && (
@@ -69,15 +72,30 @@ export default function Feed({
         </button>
       )}
       {stories.length ? (
-        stories.map((a, i) => <NewsCard key={a.id} story={a} eager={i === 0} />)
+        stories.map((a, i) => (
+          <NewsCard
+            key={a.id}
+            story={a}
+            eager={i === 0}
+            advisory={security ? metadata[a.slug] : undefined}
+          />
+        ))
       ) : (
-        <Empty title={search ? 'No matching stories' : 'No stories here yet'}>
+        <Empty
+          title={
+            security
+              ? 'No matching security stories'
+              : search
+                ? 'No matching stories'
+                : 'No stories here yet'
+          }
+        >
           {search
             ? 'Try another phrase or adjust your filters.'
             : 'Published coverage will appear here after collection.'}
         </Empty>
       )}
-      <div ref={anchor} />
+      <div ref={anchor} className="feed-sentinel" aria-hidden="true" />
       {isFetchingNextPage ? (
         <Skeleton />
       ) : hasNextPage ? (
@@ -85,7 +103,7 @@ export default function Feed({
           {isFetchNextPageError ? 'Retry loading stories' : 'Load more stories'}
         </button>
       ) : (
-        stories.length > 0 && <p className="feed-end">You’re all caught up.</p>
+        stories.length > 0 && <p className="feed-end">You’ve reached the end of this feed.</p>
       )}
     </div>
   );

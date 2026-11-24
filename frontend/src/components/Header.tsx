@@ -40,10 +40,16 @@ export function Header() {
         {[
           ['/', 'Home'],
           ['/explore', 'Explore'],
+          ['/daily', 'Daily Briefing'],
+          ['/security', 'Security Watch'],
           ['/saved', 'Saved'],
         ].map(([path, label]) => (
           <NavLink key={path} end to={path}>
-            {label}
+            <span className={path === '/daily' || path === '/security' ? 'nav-wide' : undefined}>
+              {label}
+            </span>
+            {path === '/daily' && <span className="nav-short">Briefing</span>}
+            {path === '/security' && <span className="nav-short">Security</span>}
             {path === '/saved' && saved.length > 0 && <small>{saved.length}</small>}
           </NavLink>
         ))}

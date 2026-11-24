@@ -75,6 +75,9 @@ export interface Dashboard {
   failed_sources: number;
   awaiting_processing: number;
   ai_calls_today: number;
+  ai_input_tokens_today?: number;
+  ai_output_tokens_today?: number;
+  ai_estimated_cost_today?: number | null;
   last_success: string | null;
   views: number;
   shares: number;

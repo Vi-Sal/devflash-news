@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Clock3, Bookmark, Share2, ExternalLink, Check, Eye } from 'lucide-react';
 import { formatDistanceToNowStrict, format } from 'date-fns';
-import { art, safeUrl, type Story } from '../../services/news';
+import { art, safeUrl, type Advisory, type Story } from '../../services/news';
 import { useReader } from '../../app/reader';
 import { CategoryIcon, useCategories } from '../../components/common';
 export function StoryImage({ story, eager = false }: { story: Story; eager?: boolean }) {
@@ -72,14 +72,24 @@ export function Actions({ story }: { story: Story }) {
     </div>
   );
 }
-export default function NewsCard({ story, eager = false }: { story: Story; eager?: boolean }) {
+export default function NewsCard({
+  story,
+  eager = false,
+  lead = false,
+  advisory,
+}: {
+  story: Story;
+  eager?: boolean;
+  lead?: boolean;
+  advisory?: Advisory;
+}) {
   const { ids } = useReader(),
     categories = useCategories(),
     category = categories.find((c) => c.slug === story.categories[0]),
     path = '/article/' + story.slug;
   const published = new Date(story.publishedAt);
   return (
-    <article className="glass news-card">
+    <article className={'glass news-card' + (lead ? ' featured-card' : '')}>
       <div className="card-copy">
         <div className="meta-line">
           {category && (
@@ -102,6 +112,30 @@ export default function NewsCard({ story, eager = false }: { story: Story; eager
           <Link to={path}>{story.title}</Link>
         </h2>
         <p>{story.summary || 'Read the publisher’s original report for details.'}</p>
+        {advisory && (
+          <div className="advisory-meta">
+            <span>{advisory.verification ?? 'Reported but unverified'}</span>
+            {advisory.severity && (
+              <span
+                className={advisory.severity.toLowerCase() === 'critical' ? 'critical' : undefined}
+              >
+                {advisory.severity}
+              </span>
+            )}
+            {[
+              advisory.cve_id,
+              advisory.incident_type,
+              advisory.affected_company,
+              advisory.affected_product,
+              advisory.patch_status,
+              advisory.cvss_score == null ? null : 'CVSS ' + advisory.cvss_score,
+            ]
+              .filter(Boolean)
+              .map((value, index) => (
+                <span key={index}>{value}</span>
+              ))}
+          </div>
+        )}
         <div className="card-bottom">
           <div className="byline">
             <Clock3 size={16} />

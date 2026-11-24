@@ -48,12 +48,18 @@ class IngestionDatabaseTest {
     tx = new TransactionTemplate(new DataSourceTransactionManager(ds));
     Flyway.configure().dataSource(ds).schemas(schema).load().migrate();
     client = mock(FeedClient.class);
+    db.update("UPDATE sources SET enabled=false WHERE source_type='CISA_KEV'");
     service = newService(client);
   }
 
   private IngestionService newService(FeedClient fetcher) {
     return new IngestionService(
-        db, tx, fetcher, new FeedParser(new ObjectMapper()), mock(EnrichmentService.class));
+        db,
+        tx,
+        fetcher,
+        new FeedParser(new ObjectMapper()),
+        mock(EnrichmentService.class),
+        mock(news.devflash.articles.DailyBriefing.class));
   }
 
   @AfterEach
@@ -160,14 +166,21 @@ class IngestionDatabaseTest {
     when(adapter.summarize(any()))
         .thenThrow(new java.io.IOException("Fixture failure"))
         .thenReturn(
-            Optional.of(
-                new ArticleSummarizationService.Explanation("Fixture brief", null, null, null)));
+            new ArticleSummarizationService.Result(
+                Optional.of(
+                    new ArticleSummarizationService.Explanation("Fixture brief", null, null, null)),
+                120,
+                35));
     assertThat(enrich.regenerate(ids.getFirst())).isEqualTo("FAILED");
     assertThat(enrich.regenerate(ids.getLast())).isEqualTo("DAILY_LIMIT");
     assertThat(db.queryForObject("select sum(calls) from ai_usage", Integer.class)).isEqualTo(1);
     db.update("update site_settings set setting_value='5' where setting_key='aiDailyBudget'");
     assertThat(enrich.regenerate(ids.getFirst())).isEqualTo("GENERATED");
     assertThat(enrich.regenerate(ids.getFirst())).isEqualTo("GENERATED");
+    assertThat(db.queryForObject("select sum(input_tokens) from ai_usage", Long.class))
+        .isEqualTo(120);
+    assertThat(db.queryForObject("select sum(output_tokens) from ai_usage", Long.class))
+        .isEqualTo(35);
     verify(adapter, times(2)).summarize(any());
     assertThat(db.queryForObject("select what_happened from article_enrichments", String.class))
         .isEqualTo("Fixture brief");
@@ -200,7 +213,9 @@ class IngestionDatabaseTest {
               Long.class,
               FeedClient.KEV_URL);
       var test = live.test(advisoryId);
-      assertThat(live.run(advisoryId).errors()).isZero();
+      var advisories = live.run(advisoryId);
+      assertThat(advisories.errors()).isZero();
+      assertThat(live.run(advisoryId).inserted()).isZero();
       if (test.entries() > 0)
         assertThat(
                 db.queryForObject(
